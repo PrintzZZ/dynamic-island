@@ -1,0 +1,24 @@
+{
+  "name": "dynamic-island",
+  "version": "1.0.0",
+  "description": "Windows 平台灵动岛 —— Electron + Vue，支持岛内应用扩展",
+  "main": "dist-electron/main.js",
+  "author": "UsePro",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "gsap": "^3.15.0",
+    "vue": "^3.4.38"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.2",
+    "electron": "^31.3.1",
+    "vite": "^5.4.2",
+    "vite-plugin-electron": "^0.28.8"
+  }
+}
