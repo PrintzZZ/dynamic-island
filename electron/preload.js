@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('api', {
   moveTo: (x, y) => ipcRenderer.send('island:move-to', x, y),
   reportDock: (docked) => ipcRenderer.send('island:set-dock', docked),
   reportSound: (on) => ipcRenderer.send('island:set-sound', on),
+  hideWindow: () => ipcRenderer.send('island:hide'),
+  copyText: (text) => ipcRenderer.invoke('island:copy-text', text),
   onSwitchApp: (cb) => ipcRenderer.on('island:switch-app', (e, id) => cb(id)),
   onDockToggle: (cb) => ipcRenderer.on('island:menu-dock', () => cb()),
   onSoundToggle: (cb) => ipcRenderer.on('island:menu-sound', () => cb()),

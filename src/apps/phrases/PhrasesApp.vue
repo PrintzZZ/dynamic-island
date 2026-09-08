@@ -1,23 +1,10 @@
 <template>
-  <div class="todo-app">
+  <div class="phrases-app">
     <div class="toolbar">
       <div class="title">
-        待办
-        <span v-if="todos.length" class="count">{{ doneCount }}/{{ todos.length }}</span>
+        常用语
+        <span v-if="phrases.length" class="count">{{ phrases.length }}</span>
       </div>
-      <button
-        v-if="doneCount"
-        class="clear-btn"
-        title="清除已完成"
-        @click="clearDone"
-      >
-        清除已完成
-      </button>
-    </div>
-
-    <!-- 顶部进度条 -->
-    <div v-if="todos.length" class="progress-track">
-      <div class="progress-fill" :style="{ width: `${progress * 100}%` }" />
     </div>
 
     <!-- 快捷添加 -->
@@ -25,7 +12,7 @@
       <input
         v-model="draft"
         class="add-input"
-        placeholder="添加待办…"
+        placeholder="输入常用语，回车添加…"
         @keydown.enter="submit"
       />
       <button class="add-btn" title="添加" @click="submit">
@@ -33,16 +20,23 @@
       </button>
     </div>
 
-    <div v-if="todos.length" class="list">
-      <TransitionGroup name="todo">
-        <div v-for="t in todos" :key="t.id" class="todo-item" :class="{ done: t.done }">
-          <button class="checkbox" @click="toggleTodo(t.id)">
-            <Transition name="pop">
-              <Icon v-if="t.done" name="check" class="tick" />
-            </Transition>
-          </button>
-          <span class="text" @click="toggleTodo(t.id)">{{ t.text }}</span>
-          <button class="del" title="删除" @click="removeTodo(t.id)">
+    <div v-if="phrases.length" class="list">
+      <TransitionGroup name="phrase">
+        <div
+          v-for="p in phrases"
+          :key="p.id"
+          class="phrase-item"
+          :class="{ copied: copiedId === p.id }"
+          title="点击复制"
+          @click="copy(p)"
+        >
+          <span class="text">{{ p.text }}</span>
+          <Transition name="pop">
+            <span v-if="copiedId === p.id" class="copied-tag">
+              <Icon name="check" class="copied-ico" />已复制
+            </span>
+          </Transition>
+          <button class="del" title="删除" @click.stop="removePhrase(p.id)">
             <Icon name="close" class="del-ico" />
           </button>
         </div>
@@ -51,32 +45,57 @@
 
     <div v-else class="empty">
       <div class="empty-icon">
-        <Icon name="check" class="empty-ico" />
+        <Icon name="quote" class="empty-ico" />
       </div>
-      <div class="empty-text">暂无待办</div>
-      <div class="empty-hint">在上方输入框添加你的第一项待办</div>
+      <div class="empty-text">还没有常用语</div>
+      <div class="empty-hint">在上方输入框添加，点击条目即可复制</div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import Icon from '../../components/Icon.vue'
-import { useTodos } from './useTodos'
+import { usePhrases } from './usePhrases'
+import { sfx } from '../../utils/sound'
 
-const { todos, doneCount, progress, addTodo, toggleTodo, removeTodo, clearDone } =
-  useTodos()
+const { phrases, addPhrase, removePhrase } = usePhrases()
 
 const draft = ref('')
+const copiedId = ref(null)
+let copiedTimer = null
 
 function submit() {
-  addTodo(draft.value)
+  if (!draft.value.trim()) return
+  addPhrase(draft.value)
   draft.value = ''
 }
+
+async function copy(p) {
+  try {
+    if (window.api && window.api.copyText) {
+      await window.api.copyText(p.text)
+    } else {
+      await navigator.clipboard.writeText(p.text)
+    }
+    sfx.tick()
+    copiedId.value = p.id
+    if (copiedTimer) clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => {
+      copiedId.value = null
+    }, 1200)
+  } catch {
+    // 复制失败时静默忽略
+  }
+}
+
+onUnmounted(() => {
+  if (copiedTimer) clearTimeout(copiedTimer)
+})
 </script>
 
 <style scoped>
-.todo-app {
+.phrases-app {
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -101,37 +120,9 @@ function submit() {
   font-size: 11px;
   font-weight: 700;
   color: #0a0a0a;
-  background: #30d158;
+  background: #bf5af2;
   border-radius: 999px;
   padding: 1px 8px;
-}
-.clear-btn {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 8px;
-  transition: color 0.18s ease, background 0.18s ease;
-}
-.clear-btn:hover {
-  color: #f5f5f7;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.progress-track {
-  height: 3px;
-  margin: 0 16px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-}
-.progress-fill {
-  height: 100%;
-  background: #30d158;
-  border-radius: 999px;
-  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .add-bar {
@@ -163,7 +154,7 @@ function submit() {
   height: 36px;
   border-radius: 12px;
   border: none;
-  background: #30d158;
+  background: #bf5af2;
   color: #0a0a0a;
   cursor: pointer;
   flex-shrink: 0;
@@ -188,54 +179,43 @@ function submit() {
   flex-direction: column;
   gap: 4px;
 }
-.todo-item {
+.phrase-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
+  padding: 9px 10px;
   border-radius: 12px;
+  cursor: pointer;
   transition: background 0.18s ease;
 }
-.todo-item:hover {
+.phrase-item:hover {
   background: rgba(255, 255, 255, 0.05);
 }
-.checkbox {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.35);
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: border-color 0.2s ease, background 0.2s ease;
-}
-.todo-item.done .checkbox {
-  border-color: #30d158;
-  background: #30d158;
-}
-.tick {
-  color: #0a0a0a;
-  width: 13px;
-  height: 13px;
-  stroke-width: 3;
+.phrase-item.copied {
+  background: rgba(191, 90, 242, 0.16);
 }
 .text {
   flex: 1;
   font-size: 13px;
   color: #f5f5f7;
-  cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: color 0.2s ease;
 }
-.todo-item.done .text {
-  color: rgba(255, 255, 255, 0.35);
-  text-decoration: line-through;
-  text-decoration-color: rgba(255, 255, 255, 0.3);
+.copied-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #bf5af2;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.copied-ico {
+  width: 11px;
+  height: 11px;
+  stroke-width: 2.8;
 }
 .del {
   width: 22px;
@@ -256,7 +236,7 @@ function submit() {
   width: 10px;
   height: 10px;
 }
-.todo-item:hover .del {
+.phrase-item:hover .del {
   opacity: 1;
 }
 .del:hover {
@@ -282,13 +262,12 @@ function submit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #30d158;
+  color: #bf5af2;
   animation: float 3s ease-in-out infinite;
 }
 .empty-ico {
-  width: 28px;
-  height: 28px;
-  stroke-width: 1.8;
+  width: 24px;
+  height: 24px;
 }
 .empty-text {
   font-size: 13px;
@@ -309,7 +288,7 @@ function submit() {
   }
 }
 
-/* 勾选弹出动画 */
+/* 复制标签弹出动画 */
 .pop-enter-active {
   transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -322,20 +301,20 @@ function submit() {
 }
 
 /* 列表增删过渡 */
-.todo-enter-active {
+.phrase-enter-active {
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.todo-leave-active {
+.phrase-leave-active {
   transition: all 0.22s ease;
 }
-.todo-move {
+.phrase-move {
   transition: transform 0.3s ease;
 }
-.todo-enter-from {
+.phrase-enter-from {
   opacity: 0;
   transform: translateY(-10px) scale(0.96);
 }
-.todo-leave-to {
+.phrase-leave-to {
   opacity: 0;
   transform: translateX(30px);
 }

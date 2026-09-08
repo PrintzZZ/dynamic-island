@@ -1,4 +1,13 @@
-const { app, BrowserWindow, ipcMain, screen, Menu } = require('electron')
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  screen,
+  Menu,
+  Tray,
+  nativeImage,
+  clipboard,
+} = require('electron')
 const path = require('path')
 
 // 允许渲染进程在无用户手势下播放 Web Audio 音效
@@ -15,6 +24,7 @@ if (!gotLock) {
 const WIN = { width: 424, height: 520 }
 
 let win = null
+let tray = null
 let docked = false
 let soundOn = true
 
@@ -67,6 +77,38 @@ function createWindow() {
   })
 }
 
+function showIsland() {
+  if (!win) return
+  win.setOpacity(1)
+  win.show()
+  win.setAlwaysOnTop(true)
+}
+
+function hideIsland() {
+  if (!win) return
+  // 三重保险：穿透 + 透明 + 隐藏，规避 Windows 透明窗口 hide 后仍复现的问题
+  win.setIgnoreMouseEvents(true, { forward: true })
+  win.setOpacity(0)
+  win.hide()
+}
+
+// 系统托盘：隐藏到托盘后从此恢复
+function createTray() {
+  const icon = nativeImage.createFromPath(path.join(__dirname, '../build/icon.png'))
+  const resized = icon.resize({ width: 16, height: 16 })
+  tray = new Tray(resized)
+  tray.setToolTip('DynamicIsland 灵动岛')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: '显示灵动岛', click: () => showIsland() },
+      { type: 'separator' },
+      { label: '退出灵动岛', click: () => app.quit() },
+    ])
+  )
+  // Windows：单击托盘图标恢复灵动岛
+  tray.on('click', () => showIsland())
+}
+
 function showMenu() {
   if (!win) return
   const menu = Menu.buildFromTemplate([
@@ -86,6 +128,10 @@ function showMenu() {
       label: '时钟',
       click: () => win.webContents.send('island:switch-app', 'clock'),
     },
+    {
+      label: '常用语',
+      click: () => win.webContents.send('island:switch-app', 'phrases'),
+    },
     { type: 'separator' },
     {
       label: '吸附顶部',
@@ -100,6 +146,7 @@ function showMenu() {
       click: () => win.webContents.send('island:menu-sound'),
     },
     { type: 'separator' },
+    { label: '隐藏到托盘', click: () => hideIsland() },
     { label: '退出灵动岛', click: () => app.quit() },
   ])
   menu.popup({ window: win })
@@ -135,8 +182,24 @@ app.whenReady().then(() => {
     soundOn = !!value
   })
 
+  // 隐藏到托盘（关闭按钮）
+  ipcMain.on('island:hide', () => hideIsland())
+
+  // 快捷复制：走 Electron 剪贴板，规避渲染进程焦点/权限限制
+  ipcMain.handle('island:copy-text', (e, text) => {
+    clipboard.writeText(String(text))
+    return true
+  })
+
   ipcMain.on('island:menu', () => showMenu())
   ipcMain.on('island:quit', () => app.quit())
+
+  // 系统托盘：独立 try-catch，创建失败也不影响上面已注册的 IPC（尤其 island:hide）
+  try {
+    createTray()
+  } catch (err) {
+    console.error('创建系统托盘失败：', err)
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

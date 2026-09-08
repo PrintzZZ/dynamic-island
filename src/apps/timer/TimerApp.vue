@@ -20,17 +20,19 @@
 
     <div class="controls">
       <button class="reset-btn" title="重置" @click="reset">
-        <span class="reset-icon">↺</span>
+        <Icon name="reset" class="reset-icon" />
       </button>
       <button class="play-btn" :class="{ running: state.running }" @click="toggle">
         <Transition name="play" mode="out-in">
-          <span :key="state.running ? 'pause' : 'play'" class="play-icon">
-            {{ state.running ? '❚❚' : '▶' }}
-          </span>
+          <Icon
+            :key="state.running ? 'pause' : 'play'"
+            :name="state.running ? 'pause' : 'play'"
+            class="play-icon"
+          />
         </Transition>
       </button>
       <button class="reset-btn" title="重置" @click="reset" style="visibility: hidden">
-        <span class="reset-icon">↺</span>
+        <Icon name="reset" class="reset-icon" />
       </button>
     </div>
 
@@ -57,6 +59,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import Icon from '../../components/Icon.vue'
 import { useTimer } from './useTimer'
 
 const { state, presets, progress, timeText, toggle, reset, setPreset, setDuration } =
@@ -180,8 +183,8 @@ function applyCustom() {
   transform: scale(1.06);
 }
 .reset-icon {
-  font-size: 18px;
-  line-height: 1;
+  width: 17px;
+  height: 17px;
 }
 .play-btn {
   width: 60px;
@@ -200,10 +203,9 @@ function applyCustom() {
   transform: scale(1.08);
 }
 .play-icon {
-  font-size: 20px;
-  line-height: 1;
-  font-weight: 700;
-  display: inline-block;
+  width: 26px;
+  height: 26px;
+  display: block;
 }
 .play-enter-active {
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;

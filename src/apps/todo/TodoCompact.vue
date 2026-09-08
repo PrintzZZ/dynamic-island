@@ -1,12 +1,13 @@
 <template>
   <div class="todo-compact">
-    <span class="check">✓</span>
+    <span class="check"><Icon name="check" class="check-ico" /></span>
     <span class="text">{{ summary }}</span>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import Icon from '../../components/Icon.vue'
 import { useTodos } from './useTodos'
 
 const { pending } = useTodos()
@@ -32,12 +33,15 @@ const summary = computed(() => {
   border-radius: 50%;
   background: #30d158;
   color: #0a0a0a;
-  font-size: 10px;
-  font-weight: 900;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+.check-ico {
+  width: 10px;
+  height: 10px;
+  stroke-width: 3;
 }
 .text {
   font-size: 13px;

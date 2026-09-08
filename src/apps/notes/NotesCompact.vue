@@ -1,13 +1,14 @@
 <template>
   <div class="notes-compact">
     <span class="dot" />
-    <span class="icon">✎</span>
+    <Icon name="pencil" class="note-ico" />
     <span class="text">{{ summary }}</span>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import Icon from '../../components/Icon.vue'
 import { useNotes } from './useNotes'
 
 const { notes } = useNotes()
@@ -36,9 +37,10 @@ const summary = computed(() => {
   background: #ffd60a;
   animation: pulse 2s ease-in-out infinite;
 }
-.icon {
-  font-size: 14px;
-  line-height: 1;
+.note-ico {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
   color: #ffd60a;
 }
 .text {

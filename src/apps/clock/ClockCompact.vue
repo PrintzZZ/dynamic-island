@@ -1,5 +1,6 @@
 <template>
   <div class="clock-compact">
+    <span class="dot" />
     <span class="time">{{ time }}</span>
   </div>
 </template>
@@ -28,7 +29,15 @@ onUnmounted(() => clearInterval(timer))
   height: 100%;
   display: flex;
   align-items: center;
+  gap: 8px;
   padding: 0 16px;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0a84ff;
+  flex-shrink: 0;
 }
 .time {
   font-size: 14px;

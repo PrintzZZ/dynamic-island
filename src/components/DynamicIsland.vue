@@ -19,7 +19,7 @@
         <div v-else key="expanded" class="expanded-slot">
           <div ref="headerEl" class="header">
             <button class="drag-handle" title="拖动" @mousedown.prevent="startDrag">
-              ≡
+              <Icon name="drag" class="drag-ico" />
             </button>
             <div ref="tabsEl" class="app-tabs">
               <div ref="indicatorEl" class="tab-indicator" />
@@ -40,12 +40,14 @@
               <button
                 class="icon-btn"
                 :class="{ on: island.pinned }"
-                title="固定"
+                title="固定展开"
                 @click="togglePin"
               >
-                {{ island.pinned ? '●' : '○' }}
+                <Icon :name="island.pinned ? 'dot-on' : 'dot-off'" class="ico" />
               </button>
-              <button class="icon-btn" title="收起" @click="doCollapse">✕</button>
+              <button class="icon-btn" title="隐藏到托盘" @click.stop="doHide">
+                <Icon name="close" class="ico" />
+              </button>
             </div>
           </div>
           <div ref="bodyEl" class="body">
@@ -62,6 +64,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import gsap from 'gsap'
+import Icon from './Icon.vue'
 import { useIsland, bindPill } from '../composables/useIsland'
 import { toggleMuted, isMuted } from '../utils/sound'
 
@@ -270,6 +273,10 @@ function doCollapse() {
   forceCollapse()
 }
 
+function doHide() {
+  if (window.api) window.api.hideWindow()
+}
+
 function showMenu() {
   if (window.api) window.api.showMenu()
 }
@@ -396,14 +403,17 @@ onBeforeUnmount(() => {
   border-radius: 9px;
   background: transparent;
   color: var(--text-2);
-  font-size: 16px;
-  line-height: 1;
   cursor: grab;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   transition: background 0.18s ease, color 0.18s ease;
+}
+.drag-ico {
+  width: 28px;
+  height: 28px;
+  stroke-width: 2.0;
 }
 .drag-handle:hover {
   background: rgba(255, 255, 255, 0.1);
@@ -472,12 +482,15 @@ onBeforeUnmount(() => {
   border: none;
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-2);
-  font-size: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+.icon-btn .ico {
+  width: 13px;
+  height: 13px;
 }
 .icon-btn:hover {
   background: rgba(255, 255, 255, 0.16);

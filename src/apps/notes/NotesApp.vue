@@ -7,7 +7,9 @@
           便签
           <span class="count">{{ notes.length }}</span>
         </div>
-        <button class="add-btn" title="新建便签" @click="startCreate">＋</button>
+        <button class="add-btn" title="新建便签" @click="startCreate">
+          <Icon name="plus" class="add-ico" />
+        </button>
       </div>
 
       <div v-if="notes.length" class="list">
@@ -25,13 +27,17 @@
               <div class="note-content">{{ n.content || '点击编辑内容…' }}</div>
               <div class="meta">{{ fmtTime(n.updatedAt) }}</div>
             </div>
-            <button class="del-btn" title="删除" @click.stop="remove(n)">✕</button>
+            <button class="del-btn" title="删除" @click.stop="remove(n)">
+              <Icon name="close" class="del-ico" />
+            </button>
           </div>
         </TransitionGroup>
       </div>
 
       <div v-else class="empty">
-        <div class="empty-icon">✎</div>
+        <div class="empty-icon">
+          <Icon name="pencil" class="empty-ico" />
+        </div>
         <div class="empty-text">还没有便签</div>
         <button class="empty-btn" @click="startCreate">新建一条</button>
       </div>
@@ -40,7 +46,9 @@
     <!-- 编辑视图 -->
     <div v-else class="editor-view">
       <div class="toolbar">
-        <button class="back-btn" title="返回" @click="cancel">‹</button>
+        <button class="back-btn" title="返回" @click="cancel">
+          <Icon name="back" class="back-ico" />
+        </button>
         <div class="colors">
           <button
             v-for="c in palette"
@@ -73,6 +81,7 @@
 
 <script setup>
 import { ref, reactive } from 'vue'
+import Icon from '../../components/Icon.vue'
 import { useNotes } from './useNotes'
 
 const { notes, createNote, updateNote, deleteNote } = useNotes()
@@ -177,12 +186,24 @@ function removeAndClose() {
 .add-btn {
   width: 30px;
   height: 30px;
-  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.add-ico {
+  width: 15px;
+  height: 15px;
 }
 .back-btn {
   width: 30px;
   height: 30px;
-  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.back-ico {
+  width: 17px;
+  height: 17px;
 }
 .save-btn {
   padding: 5px 14px;
@@ -264,10 +285,16 @@ function removeAndClose() {
   border: none;
   background: transparent;
   color: rgba(255, 255, 255, 0.4);
-  font-size: 12px;
   cursor: pointer;
   opacity: 0;
   transition: all 0.18s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.del-ico {
+  width: 10px;
+  height: 10px;
 }
 .note-card:hover .del-btn {
   opacity: 1;
@@ -294,9 +321,13 @@ function removeAndClose() {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
   color: #ffd60a;
   animation: float 3s ease-in-out infinite;
+}
+.empty-ico {
+  width: 27px;
+  height: 27px;
+  stroke-width: 1.7;
 }
 .empty-text {
   font-size: 13px;
