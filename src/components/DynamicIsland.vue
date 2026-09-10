@@ -6,8 +6,43 @@
       @mousedown="onPillDown"
     >
       <Transition name="slot">
+        <!-- 通知态：临时接管胶囊，主动"触达"用户 -->
+        <div
+          v-if="island.notice"
+          key="notice"
+          class="notice-slot"
+          :style="{ '--notice-accent': island.notice.accent || '#ffd60a' }"
+          @click.stop="onNoticeBody"
+        >
+          <div ref="noticeEl" class="notice-inner">
+            <div class="notice-icon">
+              <Icon :name="island.notice.icon || 'clipboard'" class="notice-ico" />
+            </div>
+            <div class="notice-text">
+              <div class="notice-title">{{ island.notice.title }}</div>
+              <div class="notice-detail">{{ island.notice.detail }}</div>
+            </div>
+            <button
+              v-if="island.notice.url"
+              class="notice-act"
+              title="打开链接"
+              @click.stop="onNoticeOpen"
+            >
+              <Icon name="external" class="notice-act-ico" />
+            </button>
+            <button
+              v-else-if="island.notice.ack"
+              class="notice-act"
+              title="知道了"
+              @click.stop="onNoticeAck"
+            >
+              <Icon name="check" class="notice-act-ico" />
+            </button>
+          </div>
+        </div>
+
         <!-- 紧凑态 -->
-        <div v-if="island.mode === 'compact'" key="compact" class="compact-slot">
+        <div v-else-if="island.mode === 'compact'" key="compact" class="compact-slot">
           <component :is="activeApp.compact" v-if="activeApp.compact" />
           <div v-else class="default-compact">
             <span class="icon">{{ activeApp.icon }}</span>
@@ -66,7 +101,7 @@ import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import gsap from 'gsap'
 import Icon from './Icon.vue'
 import { useIsland, bindPill } from '../composables/useIsland'
-import { toggleMuted, isMuted } from '../utils/sound'
+import { toggleMuted, isMuted, sfx } from '../utils/sound'
 
 const {
   island,
@@ -79,6 +114,9 @@ const {
   togglePin,
   setDock,
   toggleDock,
+  dismissNotice,
+  pauseNotice,
+  resumeNotice,
 } = useIsland()
 
 const pillEl = ref(null)
@@ -86,6 +124,10 @@ const headerEl = ref(null)
 const bodyEl = ref(null)
 const tabsEl = ref(null)
 const indicatorEl = ref(null)
+const noticeEl = ref(null)
+
+// 记录最近一次鼠标位置：通知消失后据此重算点击穿透
+let lastPointer = { x: 0, y: 0 }
 
 // ---------- 悬停展开 / 收起 ----------
 let enterTimer = null
@@ -109,10 +151,21 @@ function syncClickThrough(cx, cy) {
 
 function onMove(e) {
   if (dragging) return
+  lastPointer = { x: e.clientX, y: e.clientY }
   const inside = hitTest(e.clientX, e.clientY)
   if (inside !== hovering) {
     hovering = inside
     if (window.api) window.api.setClickThrough(!inside)
+  }
+  // 通知态：悬停暂停倒计时，且不触发展开 / 收起
+  if (island.notice) {
+    clearTimeout(enterTimer)
+    enterTimer = null
+    clearTimeout(leaveTimer)
+    leaveTimer = null
+    if (inside) pauseNotice()
+    else resumeNotice()
+    return
   }
   if (inside) {
     clearTimeout(leaveTimer)
@@ -157,6 +210,8 @@ async function startDrag(e) {
 }
 
 function onPillDown(e) {
+  // 通知态下不拖动，避免把提醒直接拖走
+  if (island.notice) return
   // 紧凑态下整颗胶囊都可拖动；展开态由头部手柄拖动
   if (island.mode === 'compact') startDrag(e)
 }
@@ -251,10 +306,33 @@ watch(
 
 watch(
   () => island.activeAppId,
-  async () => {
+  async (id) => {
+    // 通知主进程：网速应用活跃时才采样，离开/收起后停止
+    if (window.api && window.api.setNetActive) window.api.setNetActive(id === 'net')
     if (island.mode === 'expanded') {
       await nextTick()
       moveIndicator()
+    }
+  },
+  { immediate: true }
+)
+
+// 通知入场动效：胶囊形变之外，再给内容补一层"被触达"的观感
+watch(
+  () => island.notice,
+  async (n) => {
+    await nextTick()
+    if (!n) {
+      // 提醒消失后按当前鼠标位置重算穿透，避免透明区域挡住点击
+      syncClickThrough(lastPointer.x, lastPointer.y)
+      return
+    }
+    if (noticeEl.value) {
+      gsap.fromTo(
+        noticeEl.value,
+        { y: -14, scale: 0.94 },
+        { y: 0, scale: 1, duration: 0.5, ease: 'back.out(1.7)' }
+      )
     }
   }
 )
@@ -265,7 +343,28 @@ function onClick() {
     suppressClick = false
     return
   }
+  if (island.notice) return
   if (island.mode === 'compact') expand()
+}
+
+// 点通知的空白处：只收起提醒，不展开岛；算作用户"已确认"
+function onNoticeBody() {
+  dismissNotice('user')
+}
+
+// 一键跳转：交给主进程用 shell.openExternal 打开（只放行 http/https）
+async function onNoticeOpen() {
+  const url = island.notice && island.notice.url
+  if (!url) return
+  if (window.api && window.api.openClipUrl) await window.api.openClipUrl(url)
+  sfx.tick()
+  dismissNotice('user')
+}
+
+// 「知道了」：明确确认，提醒不再催
+function onNoticeAck() {
+  sfx.tick()
+  dismissNotice('user')
 }
 
 function doCollapse() {
@@ -282,7 +381,12 @@ function showMenu() {
 }
 
 function onKey(e) {
-  if (e.key === 'Escape') doCollapse()
+  if (e.key !== 'Escape') return
+  if (island.notice) {
+    dismissNotice('user')
+    return
+  }
+  doCollapse()
 }
 
 onMounted(async () => {
@@ -339,6 +443,31 @@ onBeforeUnmount(() => {
   will-change: width, height, border-radius, top;
 }
 
+/* 胶囊脉冲：计时开始（绿）/ 结束与提醒（红）时向外扩散一圈光晕。
+   只动 box-shadow，不碰 transform，所以不会干扰形变和居中位移。 */
+@keyframes pillPulseStart {
+  0% {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), 0 0 0 0 rgba(48, 209, 88, 0.55);
+  }
+  100% {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), 0 0 0 16px rgba(48, 209, 88, 0);
+  }
+}
+@keyframes pillPulseEnd {
+  0% {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), 0 0 0 0 rgba(255, 69, 58, 0.6);
+  }
+  100% {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), 0 0 0 18px rgba(255, 69, 58, 0);
+  }
+}
+.pill.pulse-start {
+  animation: pillPulseStart 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pill.pulse-end {
+  animation: pillPulseEnd 0.85s cubic-bezier(0.22, 1, 0.36, 1) 2;
+}
+
 /* 固定尺寸槽位：居中裁剪，形变过程中内容不回流 */
 .compact-slot,
 .expanded-slot {
@@ -356,6 +485,92 @@ onBeforeUnmount(() => {
   height: var(--island-expanded-h);
   display: flex;
   flex-direction: column;
+}
+
+/* 通知态：外层只负责居中（transform 要留给居中），
+   内层才交给 GSAP 做位移 / 缩放，避免两套 transform 互相覆盖 */
+.notice-slot {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 360px;
+  height: 66px;
+}
+.notice-inner {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  height: 100%;
+  padding: 0 12px 0 14px;
+}
+.notice-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  color: var(--notice-accent, #ffd60a);
+  background: color-mix(in srgb, var(--notice-accent, #ffd60a) 20%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  animation: noticePulse 1.8s ease-in-out infinite;
+}
+.notice-ico {
+  width: 17px;
+  height: 17px;
+}
+@keyframes noticePulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+.notice-text {
+  flex: 1;
+  min-width: 0;
+}
+.notice-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f5f5f7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.notice-detail {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.notice-act {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+.notice-act:hover {
+  background: var(--notice-accent, #ffd60a);
+  color: #000;
+  transform: scale(1.08);
+}
+.notice-act-ico {
+  width: 15px;
+  height: 15px;
 }
 
 /* 紧凑 / 展开交叉淡入淡出 */

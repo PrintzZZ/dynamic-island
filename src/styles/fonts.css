@@ -1,0 +1,58 @@
+/*
+ * 本地字体（可选，免费可商用）
+ * ------------------------------------------------------------------
+ * 字体文件放在 src/assets/fonts/ 下，文件名与下面一致即可自动生效。
+ * 缺失时不会报错：Vite 只给一条 warning，运行期回退到系统字体。
+ *
+ * 西文/数字：Inter（SIL OFL）
+ *   https://rsms.me/inter/  →  下载解压后取 InterVariable.woff2（官方文件名，无需改名）
+ *
+ * 中文：MiSans（小米，免费商用）
+ *   https://hyperos.mi.com/font/  →  取 Regular / Medium / DemiBold / Bold，
+ *   分别命名为 MiSans-Regular.woff2 / MiSans-Medium.woff2 /
+ *             MiSans-DemiBold.woff2 / MiSans-Bold.woff2
+ *   （换成 HarmonyOS Sans SC 也可以：文件改成上面的名字，
+ *     或把下面的 'MiSans' 换成 'HarmonyOS Sans SC'）
+ *
+ * 只放部分字重也没问题：缺的那档会由已加载的字重合成加粗，
+ * 中文字形仍全部来自 MiSans，不会掉到系统字体、也不会中西文跳字体。
+ */
+
+/* ---------- 西文 / 数字：可变字重，一个文件覆盖 100–900 ---------- */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../assets/fonts/InterVariable.woff2') format('woff2');
+}
+
+/* ---------- 中文：MiSans，按字重分文件 ---------- */
+@font-face {
+  font-family: 'MiSans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/MiSans-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'MiSans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../assets/fonts/MiSans-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'MiSans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../assets/fonts/MiSans-DemiBold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'MiSans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/MiSans-Bold.woff2') format('woff2');
+}

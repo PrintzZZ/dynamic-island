@@ -60,6 +60,17 @@ export const sfx = {
   switchApp() {
     tone(1250, 0.04, { gain: 0.07 })
   },
+  // 通知触达：清亮的上行三音，比 switchApp 更"有存在感"
+  notice() {
+    tone(784, 0.1, { gain: 0.09 })
+    tone(1046, 0.1, { when: 0.08, gain: 0.09 })
+    tone(1568, 0.16, { when: 0.16, gain: 0.08 })
+  },
+  // 计时开始：短促上扬，和"结束"的警报音形成对比
+  start() {
+    tone(523, 0.07, { gain: 0.09 })
+    tone(784, 0.12, { when: 0.06, gain: 0.1 })
+  },
   // 勾选待办：极轻 tick
   tick() {
     tone(1650, 0.03, { gain: 0.06 })

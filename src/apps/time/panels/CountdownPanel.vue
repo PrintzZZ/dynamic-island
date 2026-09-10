@@ -1,48 +1,33 @@
 <template>
-  <div class="timer-app" :class="{ finished: state.finished }">
-    <div class="ring-wrap">
-      <svg class="ring" viewBox="0 0 200 200">
-        <circle class="track" cx="100" cy="100" :r="R" />
-        <circle
-          class="bar"
-          cx="100"
-          cy="100"
-          :r="R"
-          :stroke-dasharray="C"
-          :stroke-dashoffset="dashOffset"
-        />
-      </svg>
-      <div class="ring-center">
-        <div class="time">{{ timeText }}</div>
-        <div class="status">{{ statusText }}</div>
-      </div>
-    </div>
+  <div class="cd-panel">
+    <RingProgress :progress="progress" color="#FF9F0A" :size="158">
+      <div class="big">{{ fmtMs(cd.remaining) }}</div>
+      <div class="status" :class="{ done: cd.finished }">{{ statusText }}</div>
+    </RingProgress>
 
     <div class="controls">
-      <button class="reset-btn" title="重置" @click="reset">
-        <Icon name="reset" class="reset-icon" />
+      <button class="ghost" title="重置" @click="cdReset">
+        <Icon name="reset" class="ghost-ico" />
       </button>
-      <button class="play-btn" :class="{ running: state.running }" @click="toggle">
-        <Transition name="play" mode="out-in">
+      <button class="play" :class="{ running: cd.running }" title="开始 / 暂停" @click="cdToggle">
+        <Transition name="swap" mode="out-in">
           <Icon
-            :key="state.running ? 'pause' : 'play'"
-            :name="state.running ? 'pause' : 'play'"
-            class="play-icon"
+            :key="cd.running ? 'pause' : 'play'"
+            :name="cd.running ? 'pause' : 'play'"
+            class="play-ico"
           />
         </Transition>
       </button>
-      <button class="reset-btn" title="重置" @click="reset" style="visibility: hidden">
-        <Icon name="reset" class="reset-icon" />
-      </button>
+      <span class="spacer" />
     </div>
 
     <div class="presets">
       <button
-        v-for="p in presets"
+        v-for="p in COUNTDOWN_PRESETS"
         :key="p"
         class="chip"
-        :class="{ active: isPresetActive(p) }"
-        @click="setPreset(p)"
+        :class="{ active: cd.total === p * 60000 }"
+        @click="cdSetPreset(p)"
       >
         {{ p }} 分
       </button>
@@ -52,91 +37,51 @@
       <input v-model.number="customMin" class="num" type="number" min="0" placeholder="分" />
       <span class="colon">:</span>
       <input v-model.number="customSec" class="num" type="number" min="0" max="59" placeholder="秒" />
-      <button class="set-btn" @click="applyCustom">设定</button>
+      <button class="set" @click="applyCustom">设定</button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import Icon from '../../components/Icon.vue'
-import { useTimer } from './useTimer'
+import { computed, ref } from 'vue'
+import Icon from '../../../components/Icon.vue'
+import RingProgress from '../RingProgress.vue'
+import { COUNTDOWN_PRESETS, fmtMs, useTimeApp } from '../useTimeApp'
 
-const { state, presets, progress, timeText, toggle, reset, setPreset, setDuration } =
-  useTimer()
+const { state, cdToggle, cdReset, cdSetPreset, cdSetDuration } = useTimeApp()
 
-const R = 88
-const C = 2 * Math.PI * R
+const cd = computed(() => state.cd)
 
-const dashOffset = computed(() => C * (1 - progress.value))
+const progress = computed(() => (cd.value.total > 0 ? cd.value.remaining / cd.value.total : 0))
 
 const statusText = computed(() => {
-  if (state.finished) return '时间到'
-  if (state.running) return '进行中'
+  if (cd.value.finished) return '时间到'
+  if (cd.value.running) return '进行中'
   return '已就绪'
 })
 
-function isPresetActive(min) {
-  return state.total === min * 60000
-}
-
 const customMin = ref(5)
 const customSec = ref(0)
+
 function applyCustom() {
-  const m = Number(customMin.value) || 0
-  const s = Number(customSec.value) || 0
-  const ms = (m * 60 + s) * 1000
-  if (ms > 0) setDuration(ms)
+  const ms = ((Number(customMin.value) || 0) * 60 + (Number(customSec.value) || 0)) * 1000
+  if (ms > 0) cdSetDuration(ms)
 }
 </script>
 
 <style scoped>
-.timer-app {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 18px 20px 20px;
-  gap: 16px;
-  overflow: hidden;
-}
-.ring-wrap {
-  position: relative;
-  width: 190px;
-  height: 190px;
-  flex-shrink: 0;
-}
-.ring {
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg);
-}
-.track {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.08);
-  stroke-width: 10;
-}
-.bar {
-  fill: none;
-  stroke: #ff9f0a;
-  stroke-width: 10;
-  stroke-linecap: round;
-  transition: stroke-dashoffset 0.25s linear, stroke 0.3s ease;
-}
-.timer-app.finished .bar {
-  stroke: #ff453a;
-}
-.ring-center {
-  position: absolute;
-  inset: 0;
+.cd-panel {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 12px;
+  padding: 2px 0;
 }
-.time {
-  font-size: 40px;
+.big {
+  font-size: 38px;
   font-weight: 300;
   color: #f5f5f7;
   font-variant-numeric: tabular-nums;
@@ -147,7 +92,8 @@ function applyCustom() {
   color: rgba(255, 255, 255, 0.4);
   letter-spacing: 1px;
 }
-.timer-app.finished .time {
+.status.done {
+  color: #ff453a;
   animation: blink 0.8s ease-in-out infinite;
 }
 @keyframes blink {
@@ -165,9 +111,13 @@ function applyCustom() {
   align-items: center;
   gap: 20px;
 }
-.reset-btn {
-  width: 44px;
-  height: 44px;
+.ghost,
+.spacer {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+}
+.ghost {
   border-radius: 50%;
   border: none;
   background: rgba(255, 255, 255, 0.08);
@@ -178,17 +128,17 @@ function applyCustom() {
   justify-content: center;
   transition: background 0.18s ease, transform 0.18s ease;
 }
-.reset-btn:hover {
+.ghost:hover {
   background: rgba(255, 255, 255, 0.16);
   transform: scale(1.06);
 }
-.reset-icon {
-  width: 17px;
-  height: 17px;
+.ghost-ico {
+  width: 16px;
+  height: 16px;
 }
-.play-btn {
-  width: 60px;
-  height: 60px;
+.play {
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   border: none;
   background: #ff9f0a;
@@ -199,25 +149,28 @@ function applyCustom() {
   justify-content: center;
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s ease;
 }
-.play-btn:hover {
+.play.running {
+  background: #ffb340;
+}
+.play:hover {
   transform: scale(1.08);
 }
-.play-icon {
-  width: 26px;
-  height: 26px;
+.play-ico {
+  width: 25px;
+  height: 25px;
   display: block;
 }
-.play-enter-active {
+.swap-enter-active {
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
 }
-.play-leave-active {
+.swap-leave-active {
   transition: opacity 0.12s ease;
 }
-.play-enter-from {
+.swap-enter-from {
   transform: scale(0.4);
   opacity: 0;
 }
-.play-leave-to {
+.swap-leave-to {
   opacity: 0;
 }
 
@@ -228,7 +181,7 @@ function applyCustom() {
   gap: 6px;
 }
 .chip {
-  padding: 6px 12px;
+  padding: 5px 11px;
   border-radius: 999px;
   border: none;
   background: rgba(255, 255, 255, 0.06);
@@ -236,7 +189,7 @@ function applyCustom() {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  transition: background 0.18s ease, color 0.18s ease;
 }
 .chip:hover {
   background: rgba(255, 255, 255, 0.12);
@@ -253,13 +206,13 @@ function applyCustom() {
   gap: 6px;
 }
 .num {
-  width: 52px;
+  width: 50px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   color: #f5f5f7;
   outline: none;
-  padding: 7px 8px;
+  padding: 6px 8px;
   font-size: 13px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -275,8 +228,8 @@ function applyCustom() {
 .colon {
   color: rgba(255, 255, 255, 0.4);
 }
-.set-btn {
-  padding: 7px 14px;
+.set {
+  padding: 6px 13px;
   border-radius: 10px;
   border: none;
   background: #ff9f0a;
@@ -286,7 +239,7 @@ function applyCustom() {
   cursor: pointer;
   transition: transform 0.18s ease;
 }
-.set-btn:hover {
+.set:hover {
   transform: scale(1.05);
 }
 </style>

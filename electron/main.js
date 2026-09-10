@@ -7,7 +7,10 @@ const {
   Tray,
   nativeImage,
   clipboard,
+  shell,
 } = require('electron')
+const { spawn } = require('child_process')
+const fs = require('fs')
 const path = require('path')
 
 // 允许渲染进程在无用户手势下播放 Web Audio 音效
@@ -27,6 +30,194 @@ let win = null
 let tray = null
 let docked = false
 let soundOn = true
+
+// ---------- 网速采样：netstat -e 增量统计 ----------
+// 每秒 spawn 一次 netstat（约 140ms），取首行「字节」累计收发值做差分；
+// 仅在「网速为当前应用 且 窗口可见」时轮询，窗口隐藏到托盘即停止。
+let netSched = null
+let netPending = false
+let netPrev = null // { t, rx, tx }
+let netCur = { down: 0, up: 0 }
+let netWanted = false // 渲染进程上报：网速是否当前活跃应用
+let netVisible = false // 窗口是否可见
+
+// 解析 netstat -e：第一行含 >=2 个数字的行即「字节」行（兼容中英文系统）
+function netParse(text) {
+  for (const ln of text.split(/\r?\n/)) {
+    const m = ln.match(/\d+/g)
+    if (m && m.length >= 2) return [parseInt(m[0], 10), parseInt(m[1], 10)]
+  }
+  return null
+}
+
+function netApply(rx, tx) {
+  const now = Date.now()
+  const p = netPrev
+  netPrev = { t: now, rx, tx }
+  if (!p) return
+  const dt = now - p.t
+  if (dt < 200 || dt > 3000) return // 跳过暂停/异常间隔
+  if (rx < p.rx || tx < p.tx) return // 计数器重置
+  const down = ((rx - p.rx) * 1000) / dt
+  const up = ((tx - p.tx) * 1000) / dt
+  // 一阶指数平滑，抑制瞬时抖动
+  netCur.down = netCur.down ? netCur.down * 0.5 + down * 0.5 : down
+  netCur.up = netCur.up ? netCur.up * 0.5 + up * 0.5 : up
+}
+
+function netEmit() {
+  if (win && !win.isDestroyed() && win.isVisible()) {
+    win.webContents.send('net:stats', {
+      down: Math.max(0, Math.round(netCur.down)),
+      up: Math.max(0, Math.round(netCur.up)),
+      t: Date.now(),
+    })
+  }
+}
+
+function netPoll() {
+  return new Promise((resolve) => {
+    if (netPending) return resolve()
+    netPending = true
+    let child
+    try {
+      child = spawn('netstat', ['-e'], { windowsHide: true })
+    } catch {
+      netPending = false
+      return resolve()
+    }
+    let out = ''
+    child.stdout.on('data', (d) => {
+      out += d.toString('latin1')
+    })
+    const done = () => {
+      netPending = false
+      const nums = netParse(out)
+      if (nums) netApply(nums[0], nums[1])
+      netEmit()
+      resolve()
+    }
+    child.on('error', () => {
+      netPending = false
+      resolve()
+    })
+    child.on('close', done)
+  })
+}
+
+// 启停调度：仅在 netWanted && netVisible 时保持 ~1Hz 循环
+function netTick() {
+  if (!netWanted || !netVisible) {
+    netStop()
+    return
+  }
+  if (netSched) return
+  netSched = setTimeout(async () => {
+    netSched = null
+    await netPoll()
+    if (netWanted && netVisible) netTick()
+    else netStop()
+  }, 860)
+}
+
+function netStart() {
+  netPrev = null
+  netTick()
+}
+
+function netStop() {
+  if (netSched) {
+    clearTimeout(netSched)
+    netSched = null
+  }
+}
+
+// ---------- 剪贴板历史 ----------
+// 轮询 system clipboard，做去重 + 上限的历史队列；识别出 http(s) 链接时
+// 一并把 url 存进条目，渲染进程据此在右侧给出「一键跳转」按钮。
+const CLIP_MAX = 60
+const CLIP_POLL_MS = 700
+let clipItems = []
+let clipLast = ''
+let clipTimer = null
+let clipSaveTimer = null
+
+function clipStorePath() {
+  return path.join(app.getPath('userData'), 'clipboard-history.json')
+}
+
+function clipLoad() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(clipStorePath(), 'utf8'))
+    if (Array.isArray(raw)) {
+      clipItems = raw
+        .filter((x) => x && typeof x.text === 'string')
+        .slice(0, CLIP_MAX)
+        .map((x) => ({
+          id: String(x.id || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+          text: x.text,
+          url: typeof x.url === 'string' ? x.url : clipExtractUrl(x.text),
+          at: Number(x.at) || Date.now(),
+        }))
+    }
+  } catch {
+    clipItems = []
+  }
+}
+
+function clipSave() {
+  if (clipSaveTimer) return
+  clipSaveTimer = setTimeout(() => {
+    clipSaveTimer = null
+    try {
+      fs.writeFileSync(clipStorePath(), JSON.stringify(clipItems))
+    } catch (err) {
+      console.error('保存剪贴板历史失败：', err)
+    }
+  }, 400)
+}
+
+// 取文本里第一个 http(s) 链接，并剥掉结尾常见的标点
+function clipExtractUrl(text) {
+  const m = String(text || '').match(/https?:\/\/[^\s<>"'`]+/i)
+  if (!m) return null
+  const url = m[0].replace(/[.,;:!?，。；：！？）)】\]}》>'"”’]+$/, '')
+  return url || null
+}
+
+function clipPush(text) {
+  const t = String(text || '').trim()
+  if (!t) return
+  const dup = clipItems.findIndex((x) => x.text === t)
+  if (dup !== -1) clipItems.splice(dup, 1)
+  const item = {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    text: t,
+    url: clipExtractUrl(t),
+    at: Date.now(),
+  }
+  clipItems.unshift(item)
+  if (clipItems.length > CLIP_MAX) clipItems.length = CLIP_MAX
+  clipSave()
+  if (win && !win.isDestroyed()) win.webContents.send('clipboard:new', item)
+}
+
+function clipPoll() {
+  let text = ''
+  try {
+    text = clipboard.readText()
+  } catch {
+    return
+  }
+  if (!text || text === clipLast) return
+  clipLast = text
+  clipPush(text)
+}
+
+function clipStart() {
+  if (clipTimer) return
+  clipTimer = setInterval(clipPoll, CLIP_POLL_MS)
+}
 
 // 取窗口所在显示器的可用区域（支持多显示器拖拽）
 function workAreaFor(target) {
@@ -72,8 +263,18 @@ function createWindow() {
   }
 
   win.once('ready-to-show', () => win.show())
+  win.on('show', () => {
+    netVisible = true
+    if (netWanted) netStart()
+  })
+  win.on('hide', () => {
+    netVisible = false
+    netStop()
+  })
   win.on('closed', () => {
     win = null
+    netVisible = false
+    netStop()
   })
 }
 
@@ -121,16 +322,20 @@ function showMenu() {
       click: () => win.webContents.send('island:switch-app', 'todo'),
     },
     {
-      label: '倒计时',
-      click: () => win.webContents.send('island:switch-app', 'timer'),
-    },
-    {
-      label: '时钟',
-      click: () => win.webContents.send('island:switch-app', 'clock'),
+      label: '时间',
+      click: () => win.webContents.send('island:switch-app', 'time'),
     },
     {
       label: '常用语',
       click: () => win.webContents.send('island:switch-app', 'phrases'),
+    },
+    {
+      label: '网速',
+      click: () => win.webContents.send('island:switch-app', 'net'),
+    },
+    {
+      label: '剪贴板',
+      click: () => win.webContents.send('island:switch-app', 'clipboard'),
     },
     { type: 'separator' },
     {
@@ -154,6 +359,15 @@ function showMenu() {
 
 app.whenReady().then(() => {
   createWindow()
+
+  // 剪贴板历史：先读磁盘缓存，再以当前剪贴板为基准监听"新复制"
+  clipLoad()
+  try {
+    clipLast = clipboard.readText()
+  } catch {
+    clipLast = ''
+  }
+  clipStart()
 
   // 渲染进程按悬停状态动态切换鼠标穿透
   ipcMain.on('island:clickthrough', (e, ignore) => {
@@ -180,6 +394,59 @@ app.whenReady().then(() => {
   // 渲染进程上报音效开关状态，用于菜单勾选
   ipcMain.on('island:set-sound', (e, value) => {
     soundOn = !!value
+  })
+
+  // 网速应用是否活跃：活跃且窗口可见时才开始采样
+  ipcMain.on('net:set-active', (e, value) => {
+    netWanted = !!value
+    if (netWanted && netVisible) netStart()
+    else if (!netWanted) netStop()
+  })
+
+  // 剪贴板历史：读取 / 复制 / 打开链接 / 删除 / 清空
+  ipcMain.handle('clipboard:get', () => clipItems)
+
+  ipcMain.handle('clipboard:copy', (e, text) => {
+    const t = String(text || '')
+    if (!t) return false
+    clipboard.writeText(t)
+    // 同步基准值，避免这次"程序内复制"又被轮询当成新记录
+    clipLast = t
+    const idx = clipItems.findIndex((x) => x.text === t.trim())
+    if (idx > 0) {
+      const [item] = clipItems.splice(idx, 1)
+      item.at = Date.now()
+      clipItems.unshift(item)
+      clipSave()
+    }
+    return true
+  })
+
+  // 一键跳转：只放行 http(s)，避免被当成任意协议的命令执行
+  ipcMain.handle('clipboard:open', (e, url) => {
+    let parsed
+    try {
+      parsed = new URL(String(url || ''))
+    } catch {
+      return false
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+    shell.openExternal(parsed.toString())
+    return true
+  })
+
+  ipcMain.handle('clipboard:remove', (e, id) => {
+    const i = clipItems.findIndex((x) => x.id === id)
+    if (i === -1) return false
+    clipItems.splice(i, 1)
+    clipSave()
+    return true
+  })
+
+  ipcMain.handle('clipboard:clear', () => {
+    clipItems = []
+    clipSave()
+    return true
   })
 
   // 隐藏到托盘（关闭按钮）

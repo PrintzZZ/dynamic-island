@@ -7,6 +7,7 @@ import { sfx } from '../utils/sound'
 export const SIZES = {
   compact: { w: 176, h: 44, r: 22 },
   expanded: { w: 384, h: 480, r: 34 },
+  notice: { w: 360, h: 66, r: 24 }, // 通知态：临时接管胶囊，用来"触达"用户
 }
 
 // 胶囊距窗口顶部的偏移：浮动 / 吸附贴边
@@ -25,6 +26,7 @@ export const island = reactive({
   activeAppId: 'notes',
   pinned: false, // 固定展开态，离开时不自动收起
   docked: loadDocked(), // 是否吸附在屏幕顶部
+  notice: null, // 临时通知（如"检测到复制了链接"），非空时胶囊进入通知态
 })
 
 watch(
@@ -38,6 +40,7 @@ const apps = computed(() => getApps())
 let pillEl = null
 
 function currentSize() {
+  if (island.notice) return SIZES.notice
   return island.mode === 'expanded' ? SIZES.expanded : SIZES.compact
 }
 
@@ -90,9 +93,97 @@ function syncShape() {
   })
 }
 
+// ---------- 通知态：临时接管胶囊，用来主动"触达"用户 ----------
+// 计时状态放在模块级，保证不论从哪个组件调用都共用同一份
+let noticeTimer = null
+let noticeLeft = 0
+let noticeAt = 0
+
+function clearNoticeTimer() {
+  if (noticeTimer) {
+    clearTimeout(noticeTimer)
+    noticeTimer = null
+  }
+}
+
+function armNotice(ms) {
+  noticeLeft = ms
+  noticeAt = Date.now()
+  clearNoticeTimer()
+  noticeTimer = setTimeout(() => {
+    noticeTimer = null
+    dismissNotice()
+  }, ms)
+}
+
+// 弹出通知：胶囊形变到通知尺寸并播放提示音，倒计时结束后自动回到原状态
+// payload.silent = true 时不播提示音（调用方已经自己放过音效了）
+export function showNotice(payload, duration = 6000) {
+  if (!payload) return
+  island.notice = { ...payload }
+  syncShape()
+  if (!payload.silent) sfx.notice()
+  armNotice(duration)
+}
+
+export function dismissNotice(reason = 'auto') {
+  clearNoticeTimer()
+  const payload = island.notice
+  if (!payload) return
+  island.notice = null
+  syncShape()
+  // 通知订阅方：reason = 'user' 表示用户主动关掉，'auto' 表示倒计时自动收起
+  for (const cb of noticeDismissHandlers) {
+    try {
+      cb(payload, reason)
+    } catch {
+      /* 订阅方出错不影响关闭通知 */
+    }
+  }
+}
+
+// 订阅"通知被关闭"，用于「提醒未被确认就继续催」这类逻辑
+const noticeDismissHandlers = new Set()
+
+export function onNoticeDismiss(cb) {
+  noticeDismissHandlers.add(cb)
+  return () => noticeDismissHandlers.delete(cb)
+}
+
+// 悬停暂停 / 移开继续，避免用户还没看完就消失
+export function pauseNotice() {
+  if (!noticeTimer) return
+  clearNoticeTimer()
+  noticeLeft = Math.max(0, noticeLeft - (Date.now() - noticeAt))
+}
+
+export function resumeNotice() {
+  if (noticeTimer || !island.notice || noticeLeft <= 0) return
+  armNotice(noticeLeft)
+}
+
+// ---------- 胶囊脉冲：给"开始 / 结束"这类瞬时动作一个视觉反馈 ----------
+// 用 CSS 动画改 box-shadow，刻意不碰 transform，避免和形变动画、居中位移打架
+export function pulsePill(kind = 'start') {
+  const el = pillEl
+  if (!el) return
+  const cls = kind === 'end' ? 'pulse-end' : 'pulse-start'
+  el.classList.remove('pulse-start', 'pulse-end')
+  // 读一次布局，保证连续触发时动画能重新播放
+  void el.offsetWidth
+  el.classList.add(cls)
+  const onEnd = () => {
+    el.classList.remove(cls)
+    el.removeEventListener('animationend', onEnd)
+  }
+  el.addEventListener('animationend', onEnd)
+}
+
 export function useIsland() {
   function expand() {
     if (island.mode === 'expanded') return
+    // 通知展示期间不展开，避免把刚弹出的提醒顶掉（例如悬停延迟到期）
+    if (island.notice) return
     island.mode = 'expanded'
     syncShape()
     sfx.expand()
@@ -121,6 +212,8 @@ export function useIsland() {
 
   function switchApp(id) {
     if (!getApp(id)) return
+    // 从托盘菜单切应用时，先收掉正在展示的提醒，否则面板会被通知态挡住
+    dismissNotice()
     if (island.activeAppId !== id) sfx.switchApp()
     island.activeAppId = id
     expand()
@@ -156,5 +249,9 @@ export function useIsland() {
     togglePin,
     setDock,
     toggleDock,
+    showNotice,
+    dismissNotice,
+    pauseNotice,
+    resumeNotice,
   }
 }

@@ -6,3 +6,7 @@ release2
 *.log
 *.timestamp-*.mjs
 .DS_Store
+
+# 苹果专有字体（PingFang SC / SF Pro）：授权仅限 Apple 设备，
+# 且实测为极小裁剪子集（466 字形、缺大量界面常用汉字），不可用也不可分发。
+/SFProPingFangSC-*.woff2

@@ -12,6 +12,16 @@ contextBridge.exposeInMainWorld('api', {
   reportSound: (on) => ipcRenderer.send('island:set-sound', on),
   hideWindow: () => ipcRenderer.send('island:hide'),
   copyText: (text) => ipcRenderer.invoke('island:copy-text', text),
+  // 网速：应用活跃上报 + 订阅主进程每秒推送的速率
+  setNetActive: (active) => ipcRenderer.send('net:set-active', active),
+  onNetStats: (cb) => ipcRenderer.on('net:stats', (e, s) => cb(s)),
+  // 剪贴板历史
+  getClipboard: () => ipcRenderer.invoke('clipboard:get'),
+  copyClip: (text) => ipcRenderer.invoke('clipboard:copy', text),
+  openClipUrl: (url) => ipcRenderer.invoke('clipboard:open', url),
+  removeClip: (id) => ipcRenderer.invoke('clipboard:remove', id),
+  clearClip: () => ipcRenderer.invoke('clipboard:clear'),
+  onClipboardNew: (cb) => ipcRenderer.on('clipboard:new', (e, item) => cb(item)),
   onSwitchApp: (cb) => ipcRenderer.on('island:switch-app', (e, id) => cb(id)),
   onDockToggle: (cb) => ipcRenderer.on('island:menu-dock', () => cb()),
   onSoundToggle: (cb) => ipcRenderer.on('island:menu-sound', () => cb()),

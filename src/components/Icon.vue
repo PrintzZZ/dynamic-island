@@ -64,6 +64,71 @@
       <path d="M4.2 19.8l1.15-4.4L17.6 3.6a2.06 2.06 0 0 1 2.92 0l-.05.05a2.06 2.06 0 0 1 0 2.92L8.6 18.65z" />
       <path d="M14.3 6.9l2.6 2.6" />
     </template>
+    <template v-else-if="name === 'clipboard'">
+      <rect x="6.4" y="4.6" width="11.2" height="15" rx="2.3" />
+      <path d="M9.6 4.6a1.6 1.6 0 0 1 1.6-1.5h1.6a1.6 1.6 0 0 1 1.6 1.5" />
+      <path d="M10 10.4h4" />
+      <path d="M10 14h4" />
+    </template>
+    <template v-else-if="name === 'link'">
+      <path d="M10.3 13.7a4.2 4.2 0 0 0 5.9 0l3-3a4.2 4.2 0 0 0-5.9-5.9l-1.5 1.5" />
+      <path d="M13.7 10.3a4.2 4.2 0 0 0-5.9 0l-3 3a4.2 4.2 0 0 0 5.9 5.9l1.5-1.5" />
+    </template>
+    <template v-else-if="name === 'external'">
+      <path d="M14.2 4.6h5.2v5.2" />
+      <path d="M19.4 4.6 11.6 12.4" />
+      <path d="M18 14.6v3.5a2 2 0 0 1-2 2H6.6a2 2 0 0 1-2-2V8.7a2 2 0 0 1 2-2h3.5" />
+    </template>
+    <template v-else-if="name === 'copy'">
+      <rect x="8.7" y="8.7" width="10.4" height="10.4" rx="2.3" />
+      <path d="M15.3 8.7V6.9a2.3 2.3 0 0 0-2.3-2.3H6.9A2.3 2.3 0 0 0 4.6 6.9v6.1a2.3 2.3 0 0 0 2.3 2.3h1.8" />
+    </template>
+    <template v-else-if="name === 'trash'">
+      <path d="M4.8 6.7h14.4" />
+      <path d="M9.5 6.7V5.3a1.7 1.7 0 0 1 1.7-1.7h1.6a1.7 1.7 0 0 1 1.7 1.7v1.4" />
+      <path d="M6.6 6.7l.85 12.1a1.7 1.7 0 0 0 1.7 1.6h5.7a1.7 1.7 0 0 0 1.7-1.6l.85-12.1" />
+    </template>
+    <template v-else-if="name === 'search'">
+      <circle cx="10.8" cy="10.8" r="5.9" />
+      <path d="M15.2 15.2 19.6 19.6" />
+    </template>
+    <template v-else-if="name === 'clock'">
+      <circle cx="12" cy="12" r="8.2" />
+      <path d="M12 7.4V12l3.1 1.9" />
+    </template>
+    <template v-else-if="name === 'timer'">
+      <circle cx="12" cy="13.6" r="7.2" />
+      <path d="M12 13.6V9.7" />
+      <path d="M9.8 3.2h4.4" />
+      <path d="M12 3.2v3.2" />
+    </template>
+    <template v-else-if="name === 'bell'">
+      <path d="M6.4 16.6V11a5.6 5.6 0 0 1 11.2 0v5.6" />
+      <path d="M4.6 16.6h14.8" />
+      <path d="M10.2 19.4a1.9 1.9 0 0 0 3.6 0" />
+    </template>
+    <template v-else-if="name === 'focus'">
+      <circle cx="12" cy="12" r="8.2" />
+      <circle cx="12" cy="12" r="3.4" />
+    </template>
+    <template v-else-if="name === 'skip'">
+      <path d="M6.4 6.3 13.9 12l-7.5 5.7z" fill="currentColor" stroke="none" />
+      <rect x="15.5" y="6.3" width="2.4" height="11.4" rx="1" fill="currentColor" stroke="none" />
+    </template>
+    <template v-else-if="name === 'repeat'">
+      <path d="M5.2 10.4a7 7 0 0 1 11.7-4.4l1.8 1.7" />
+      <path d="M18.7 3.5v4.3h-4.3" />
+      <path d="M18.8 13.6a7 7 0 0 1-11.7 4.4l-1.8-1.7" />
+      <path d="M5.3 20.5v-4.3h4.3" />
+    </template>
+    <template v-else-if="name === 'arrow-down'">
+      <path d="M12 4.5v12" />
+      <path d="M6.9 12.9 12 18l5.1-5.1" />
+    </template>
+    <template v-else-if="name === 'arrow-up'">
+      <path d="M12 19.5v-12" />
+      <path d="M6.9 11.1 12 6l5.1 5.1" />
+    </template>
   </svg>
 </template>
 
