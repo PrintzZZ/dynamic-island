@@ -270,8 +270,8 @@ function moveIndicator() {
     x: active.offsetLeft,
     width: active.offsetWidth,
     opacity: 1,
-    duration: 0.4,
-    ease: 'expo.out',
+    duration: 0.46,
+    ease: 'back.out(1.7)', // 先滑过头一点再弹回来
     overwrite: 'auto',
   })
 }
@@ -280,15 +280,15 @@ function revealExpanded() {
   if (headerEl.value) {
     gsap.fromTo(
       headerEl.value,
-      { opacity: 0, y: -8 },
-      { opacity: 1, y: 0, duration: 0.4, ease: 'expo.out', delay: 0.05 }
+      { opacity: 0, y: -14 },
+      { opacity: 1, y: 0, duration: 0.55, ease: 'back.out(2.4)', delay: 0.06 }
     )
   }
   if (bodyEl.value) {
     gsap.fromTo(
       bodyEl.value,
-      { opacity: 0, y: 14 },
-      { opacity: 1, y: 0, duration: 0.45, ease: 'expo.out', delay: 0.12 }
+      { opacity: 0, y: 22, scale: 0.97 },
+      { opacity: 1, y: 0, scale: 1, duration: 0.6, ease: 'back.out(2)', delay: 0.13 }
     )
   }
   moveIndicator()
@@ -330,8 +330,8 @@ watch(
     if (noticeEl.value) {
       gsap.fromTo(
         noticeEl.value,
-        { y: -14, scale: 0.94 },
-        { y: 0, scale: 1, duration: 0.5, ease: 'back.out(1.7)' }
+        { y: -20, scale: 0.9 },
+        { y: 0, scale: 1, duration: 0.62, ease: 'back.out(2.4)' }
       )
     }
   }
@@ -561,26 +561,34 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  transition: background 0.18s ease, color 0.18s ease,
+    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .notice-act:hover {
   background: var(--notice-accent, #ffd60a);
   color: #000;
-  transform: scale(1.08);
+  transform: scale(1.14);
 }
 .notice-act-ico {
   width: 15px;
   height: 15px;
 }
 
-/* 紧凑 / 展开交叉淡入淡出 */
+/* 紧凑 / 展开交叉淡入淡出：带一点回弹的缩放，让内容"弹"出来。
+   注意三个槽位根节点都用 translateX(-50%) 居中，所以缩放必须写完整的 transform，
+   否则会把居中位移覆盖掉。 */
 .slot-enter-active,
 .slot-leave-active {
-  transition: opacity 0.22s ease;
+  transition: opacity 0.24s ease,
+    transform 0.34s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.slot-enter-from,
+.slot-enter-from {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.92);
+}
 .slot-leave-to {
   opacity: 0;
+  transform: translateX(-50%) scale(0.97);
 }
 
 /* 缺省紧凑内容 */
@@ -701,7 +709,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease,
+    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .icon-btn .ico {
   width: 13px;
@@ -710,7 +719,7 @@ onBeforeUnmount(() => {
 .icon-btn:hover {
   background: rgba(255, 255, 255, 0.16);
   color: var(--text);
-  transform: scale(1.06);
+  transform: scale(1.12);
 }
 .icon-btn.on {
   background: var(--accent);
@@ -723,17 +732,17 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--hairline);
 }
 
-/* 应用切换：弹性上滑入场 */
+/* 应用切换：弹性上滑入场（easeOutBack，末端轻微过冲） */
 .app-enter-active {
   transition: opacity 0.3s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .app-leave-active {
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 .app-enter-from {
   opacity: 0;
-  transform: translateY(14px) scale(0.98);
+  transform: translateY(20px) scale(0.96);
 }
 .app-leave-to {
   opacity: 0;

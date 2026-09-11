@@ -55,12 +55,16 @@ function cornerRadius() {
   return { tl: topR, tr: topR, bl: r, br: r }
 }
 
+// 记录上一次的目标高度：用来判断这次是"放大"还是"缩小"
+let lastH = SIZES.compact.h
+
 // 绑定胶囊 DOM，初始化尺寸 / 圆角 / 位置与 GPU 合成提示
 export function bindPill(el) {
   pillEl = el
   if (el) {
     const s = currentSize()
     const c = cornerRadius()
+    lastH = s.h
     gsap.set(el, {
       width: s.w,
       height: s.h,
@@ -75,10 +79,17 @@ export function bindPill(el) {
 }
 
 // 统一形变：尺寸 + 顶部偏移 + 四角圆角一起补间（合成层内渲染，流畅）
+//
+// Q 弹的关键是 back.out 的"过冲"：放大时会先冲过目标尺寸再收回来。
+// 但过冲量是按"位移距离"算的，而缩小时位移同样很大（480 → 44），
+// 用同样的强度会把胶囊压到几乎看不见、把里面的内容裁掉，
+// 所以按方向分开给：放大用明显的弹（约 10% 过冲），缩小只留极轻的回弹。
 function syncShape() {
   if (!pillEl) return
   const s = currentSize()
   const c = cornerRadius()
+  const growing = s.h >= lastH
+  lastH = s.h
   gsap.to(pillEl, {
     width: s.w,
     height: s.h,
@@ -87,8 +98,8 @@ function syncShape() {
     borderTopRightRadius: c.tr,
     borderBottomLeftRadius: c.bl,
     borderBottomRightRadius: c.br,
-    duration: 0.5,
-    ease: 'expo.out', // 苹果式：先快后慢的弹性收束
+    duration: growing ? 0.42 : 0.34,
+    ease: growing ? 'back.out(1.7)' : 'back.out(0.7)',
     overwrite: 'auto',
   })
 }
