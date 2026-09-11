@@ -1,10 +1,21 @@
 <template>
   <div class="time-app">
-    <div class="switcher">
-      <div class="sw-head">
-        <span class="sw-title">岛内显示</span>
-        <span class="sw-hint">{{ activeMode.name }}</span>
+    <!-- 工作时间详情是独立子页，不占模式切换器 -->
+    <WorkPanel v-if="view === 'work'" />
+
+    <template v-else>
+      <!-- ---------- 应用头 ---------- -->
+      <div class="app-head">
+        <span class="app-ico" :style="{ background: activeMode.accent }">
+          <Icon :name="activeMode.icon" class="app-ico-svg" />
+        </span>
+        <div class="app-text">
+          <span class="app-title">时间</span>
+          <span class="app-sub">{{ activeMode.name }}</span>
+        </div>
       </div>
+
+      <!-- ---------- 岛内显示（同时也是模式切换） ---------- -->
       <div class="seg">
         <button
           v-for="m in MODES"
@@ -14,28 +25,37 @@
           :title="m.name"
           @click="setMode(m.id)"
         >
-          <Icon :name="m.icon" class="seg-ico" :style="{ color: m.accent }" />
+          <Icon :name="m.icon" class="seg-ico" :style="{ color: state.mode === m.id ? m.accent : undefined }" />
           <span class="seg-name">{{ m.name }}</span>
         </button>
       </div>
-    </div>
 
-    <Transition name="panel" mode="out-in">
-      <component :is="panels[state.mode]" :key="state.mode" />
-    </Transition>
+      <!-- ---------- 面板 ---------- -->
+      <Transition name="panel" mode="out-in">
+        <component
+          :is="panels[state.mode]"
+          :key="state.mode"
+          @open-work="view = 'work'"
+          @open-reminder="setMode('reminder')"
+        />
+      </Transition>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import Icon from '../../components/Icon.vue'
 import ClockPanel from './panels/ClockPanel.vue'
 import CountdownPanel from './panels/CountdownPanel.vue'
 import ReminderPanel from './panels/ReminderPanel.vue'
 import FocusPanel from './panels/FocusPanel.vue'
+import WorkPanel from './panels/WorkPanel.vue'
 import { MODES, useTimeApp } from './useTimeApp'
 
 const { state, setMode } = useTimeApp()
+
+const view = ref(null)
 
 const panels = {
   clock: ClockPanel,
@@ -53,44 +73,66 @@ const activeMode = computed(() => MODES.find((m) => m.id === state.mode) || MODE
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 0 14px 12px;
+  padding: 0 13px 11px;
 }
 
-.switcher {
+/* 应用头：给"当前是哪个模式"一个明确标题 */
+.app-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 1px 1px 9px;
   flex-shrink: 0;
-  padding: 4px 0 10px;
 }
-.sw-head {
+.app-ico {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+  transition: background 0.3s ease;
+}
+.app-ico-svg {
+  width: 14px;
+  height: 14px;
+}
+.app-text {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  padding: 0 2px 6px;
+  gap: 7px;
+  min-width: 0;
 }
-.sw-title {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
-}
-.sw-hint {
-  font-size: 11px;
+.app-title {
+  font-size: 13.5px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.55);
+  color: #f5f5f7;
 }
+.app-sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+/* 模式切换器 */
 .seg {
   display: flex;
   gap: 3px;
   padding: 3px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  margin-bottom: 9px;
 }
 .seg-btn {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 5px 2px 6px;
+  gap: 5px;
+  padding: 6px 2px;
   border: none;
   border-radius: 9px;
   background: transparent;
@@ -107,9 +149,10 @@ const activeMode = computed(() => MODES.find((m) => m.id === state.mode) || MODE
   color: #f5f5f7;
 }
 .seg-ico {
-  width: 14px;
-  height: 14px;
-  opacity: 0.85;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.75;
 }
 .seg-btn.on .seg-ico {
   opacity: 1;
@@ -118,21 +161,23 @@ const activeMode = computed(() => MODES.find((m) => m.id === state.mode) || MODE
   font-size: 10.5px;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 面板切换 */
 .panel-enter-active {
-  transition: opacity 0.28s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.26s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .panel-leave-active {
-  transition: opacity 0.14s ease, transform 0.14s ease;
+  transition: opacity 0.13s ease, transform 0.13s ease;
 }
 .panel-enter-from {
   opacity: 0;
-  transform: translateY(10px) scale(0.985);
+  transform: translateY(9px) scale(0.985);
 }
 .panel-leave-to {
   opacity: 0;
-  transform: translateY(-6px) scale(0.99);
+  transform: translateY(-5px) scale(0.99);
 }
 </style>

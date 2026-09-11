@@ -170,6 +170,26 @@ export function onNoticeDismiss(cb) {
   return () => noticeDismissHandlers.delete(cb)
 }
 
+// 订阅"通知条上的动作按钮被点击"（如倒计时结束的「再来一次 / 完成」）
+const noticeActionHandlers = new Set()
+
+export function onNoticeAction(cb) {
+  noticeActionHandlers.add(cb)
+  return () => noticeActionHandlers.delete(cb)
+}
+
+export function emitNoticeAction(actionId) {
+  const payload = island.notice
+  if (!payload) return
+  for (const cb of noticeActionHandlers) {
+    try {
+      cb(payload, actionId)
+    } catch {
+      /* 订阅方出错不影响其它订阅者 */
+    }
+  }
+}
+
 // 悬停暂停 / 移开继续，避免用户还没看完就消失
 export function pauseNotice() {
   if (!noticeTimer) return

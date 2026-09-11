@@ -27,6 +27,17 @@
               </div>
             </div>
             <span v-if="island.notice.spinning" class="notice-spin" />
+            <template v-else-if="island.notice.actions && island.notice.actions.length">
+              <button
+                v-for="a in island.notice.actions"
+                :key="a.id"
+                class="notice-act text"
+                :class="{ primary: a.primary }"
+                @click.stop="onNoticeActionClick(a.id)"
+              >
+                {{ a.label }}
+              </button>
+            </template>
             <button
               v-else-if="island.notice.url"
               class="notice-act"
@@ -105,7 +116,7 @@
 import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import gsap from 'gsap'
 import Icon from './Icon.vue'
-import { useIsland, bindPill } from '../composables/useIsland'
+import { useIsland, bindPill, emitNoticeAction } from '../composables/useIsland'
 import { toggleMuted, isMuted, sfx } from '../utils/sound'
 import { useMaterialBox } from '../apps/materialBox/useMaterialBox'
 
@@ -377,6 +388,14 @@ function onNoticeAck() {
   dismissNotice('user')
 }
 
+// 通知条上的动作按钮（倒计时结束的「再来一次 / 完成」等）：
+// 先把动作广播给订阅方（时间应用据此重启计时 / 收起结束态），再收起通知
+function onNoticeActionClick(id) {
+  sfx.tick()
+  emitNoticeAction(id)
+  dismissNotice('user')
+}
+
 function doCollapse() {
   suppressExpand = true
   forceCollapse()
@@ -644,6 +663,32 @@ onBeforeUnmount(() => {
 .notice-act-ico {
   width: 15px;
   height: 15px;
+}
+
+/* 文字动作按钮：倒计时结束时的「再来一次 / 完成」直接用文字，比图标更明确 */
+.notice-act.text {
+  width: auto;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 15px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+}
+.notice-act.text:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  transform: none;
+}
+.notice-act.text.primary {
+  background: var(--notice-accent, #30d158);
+  color: #06210f;
+}
+.notice-act.text.primary:hover {
+  background: var(--notice-accent, #30d158);
+  filter: brightness(1.1);
 }
 
 /* 进度条（打包 / 添加中） */

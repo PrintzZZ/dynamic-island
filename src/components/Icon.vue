@@ -167,6 +167,39 @@
       <path d="M9.4 5v6.2l1.5-1.3 1.5 1.3V5" />
       <path d="M3.6 15.4h16.8" />
     </template>
+    <!-- 时间中心 -->
+    <template v-else-if="name === 'settings'">
+      <circle cx="12" cy="12" r="3.3" />
+      <path d="M12 2.9v2.3M12 18.8v2.3M2.9 12h2.3M18.8 12h2.3" />
+      <path d="M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6" />
+    </template>
+    <template v-else-if="name === 'stop'">
+      <rect x="6.6" y="6.6" width="10.8" height="10.8" rx="2.4" fill="currentColor" stroke="none" />
+    </template>
+    <template v-else-if="name === 'chevron-right'">
+      <path d="M9.6 6.6 15 12l-5.4 5.4" />
+    </template>
+    <template v-else-if="name === 'chart'">
+      <path d="M4.6 19.4h14.8" />
+      <path d="M7.8 19.4v-6" />
+      <path d="M12 19.4V7.4" />
+      <path d="M16.2 19.4v-8.6" />
+    </template>
+    <template v-else-if="name === 'calendar'">
+      <rect x="3.6" y="5.2" width="16.8" height="15" rx="2.4" />
+      <path d="M3.6 10h16.8" />
+      <path d="M8.2 3.3v3.4" />
+      <path d="M15.8 3.3v3.4" />
+    </template>
+    <template v-else-if="name === 'target'">
+      <rect x="4.4" y="4.4" width="15.2" height="15.2" rx="3.2" />
+      <path d="M9.2 12.2l2.1 2.1 3.9-4.6" />
+    </template>
+    <template v-else-if="name === 'sun'">
+      <circle cx="12" cy="12" r="3.8" />
+      <path d="M12 2.8v2.2M12 19v2.2M2.8 12H5M19 12h2.2" />
+      <path d="M5.5 5.5l1.6 1.6M16.9 16.9l1.6 1.6M18.5 5.5l-1.6 1.6M7.1 16.9l-1.6 1.6" />
+    </template>
     <template v-else-if="name === 'arrow-down'">
       <path d="M12 4.5v12" />
       <path d="M6.9 12.9 12 18l5.1-5.1" />

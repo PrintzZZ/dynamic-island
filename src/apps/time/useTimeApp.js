@@ -1,18 +1,16 @@
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { sfx } from '../../utils/sound'
-import { island, onNoticeDismiss, showNotice, pulsePill } from '../../composables/useIsland'
+import { island, onNoticeAction, onNoticeDismiss, showNotice, pulsePill } from '../../composables/useIsland'
+import { defaultSchedule, durText, hm, normalizeSchedule, workStats } from './worktime'
 
-const STORAGE_KEY = 'island.time.v2'
-
-// 开启「多次提醒」后，未被确认就每隔这么久再催一次
-export const REPEAT_MS = 30000
+const STORAGE_KEY = 'island.time.v2' // 继续沿用，靠字段补全做兼容，不丢老数据
 
 // 岛内可显示的四种功能
 export const MODES = [
   { id: 'clock', name: '日常时间', icon: 'clock', accent: '#0A84FF' },
-  { id: 'countdown', name: '倒计时', icon: 'timer', accent: '#FF9F0A' },
-  { id: 'reminder', name: '提醒', icon: 'bell', accent: '#30D158' },
-  { id: 'focus', name: '专注时间', icon: 'focus', accent: '#BF5AF2' },
+  { id: 'countdown', name: '倒计时', icon: 'timer', accent: '#30D158' },
+  { id: 'reminder', name: '提醒', icon: 'bell', accent: '#FF9F0A' },
+  { id: 'focus', name: '专注', icon: 'focus', accent: '#BF5AF2' },
 ]
 
 export const MODE_IDS = MODES.map((m) => m.id)
@@ -21,7 +19,32 @@ export const COUNTDOWN_PRESETS = [1, 3, 5, 10, 25, 45]
 export const FOCUS_PRESETS = [15, 25, 45, 60]
 export const BREAK_PRESETS = [3, 5, 10]
 
+// 「多次提醒」策略（见需求 10.4）
+export const REPEAT_COUNTS = [
+  { id: 'off', label: '关闭' },
+  { id: 1, label: '1次' },
+  { id: 3, label: '3次' },
+  { id: 'unlimited', label: '直到确认' },
+]
+export const REPEAT_INTERVALS = [
+  { sec: 30, label: '30秒' },
+  { sec: 60, label: '1分钟' },
+  { sec: 300, label: '5分钟' },
+]
+// 相对时间预设（分钟）
+export const RELATIVE_PRESETS = [
+  { min: 30, label: '30分钟后' },
+  { min: 60, label: '1小时后' },
+  { min: 120, label: '2小时后' },
+]
+
+// 统计只保留最近这些天，不无限增长
+const STATS_KEEP_DAYS = 60
+
 const pad2 = (n) => String(n).padStart(2, '0')
+
+// 兼容旧引用：TimeCompact / 面板都在用
+export const toMinutes = hm
 
 // 毫秒 → MM:SS / H:MM:SS
 export function fmtMs(ms) {
@@ -32,32 +55,66 @@ export function fmtMs(ms) {
   return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`
 }
 
-// 'HH:MM' → 一天中的分钟数
-export function toMinutes(hhmm) {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ''))
-  if (!m) return 0
-  return Math.min(23, Number(m[1])) * 60 + Math.min(59, Number(m[2]))
+export function dayKey(d = new Date()) {
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
 }
 
-function dayKey(d) {
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+function newId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
 }
 
 function defaults() {
   return {
     mode: 'clock',
-    cd: { total: 5 * 60000, remaining: 5 * 60000, running: false, endAt: null, finished: false },
+    cd: {
+      total: 5 * 60000,
+      remaining: 5 * 60000,
+      running: false,
+      endAt: null,
+      finished: false,
+      lastTotal: 5 * 60000, // 上一次计时时长，「再来一次」用
+    },
     focus: {
       focusMs: 25 * 60000,
       breakMs: 5 * 60000,
-      phase: 'focus', // 'focus' | 'break'
+      phase: 'focus',
       remaining: 25 * 60000,
       running: false,
       endAt: null,
       rounds: 0,
+      taskId: null,
+      taskTitle: '',
+      stats: {}, // { 'Y-M-D': { minutes, rounds } }
     },
-    // 提醒：每天 HH:MM 触发，可单独启用/停用
+    workSchedule: defaultSchedule(),
     reminders: [],
+  }
+}
+
+function normalizeReminder(r) {
+  const type = r.type === 'once' ? 'once' : 'daily'
+  const at = Number(r.at) || 0
+  const time =
+    typeof r.time === 'string' && /^\d{1,2}:\d{2}$/.test(r.time)
+      ? r.time
+      : type === 'once' && at
+        ? `${pad2(new Date(at).getHours())}:${pad2(new Date(at).getMinutes())}`
+        : '09:00'
+  const rc = r.repeatCount
+  const repeatCount =
+    rc === 'off' || rc === 'unlimited' || Number(rc) > 0 ? (rc === 'off' ? 'off' : rc === 'unlimited' ? 'unlimited' : Number(rc)) : r.repeat === false ? 'off' : 'unlimited'
+  const ri = Number(r.repeatInterval)
+  return {
+    id: String(r.id || newId('rem')),
+    type,
+    time,
+    at: type === 'once' ? at : 0,
+    label: typeof r.label === 'string' ? r.label : '',
+    enabled: r.enabled !== false,
+    done: !!r.done,
+    repeatCount,
+    repeatInterval: [30, 60, 300].includes(ri) ? ri : 30,
+    lastFired: typeof r.lastFired === 'string' ? r.lastFired : '',
   }
 }
 
@@ -74,20 +131,13 @@ function load() {
   const s = { ...base, ...raw }
   s.cd = { ...base.cd, ...(raw.cd || {}) }
   s.focus = { ...base.focus, ...(raw.focus || {}) }
+  if (!s.focus.stats || typeof s.focus.stats !== 'object') s.focus.stats = {}
+  s.workSchedule = normalizeSchedule(raw.workSchedule)
   s.reminders = Array.isArray(raw.reminders)
-    ? raw.reminders
-        .filter((r) => r && typeof r.time === 'string')
-        .map((r) => ({
-          id: String(r.id || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
-          time: r.time,
-          label: typeof r.label === 'string' ? r.label : '',
-          enabled: r.enabled !== false,
-          // 多次提醒：未确认则 30 秒后再催（旧数据缺字段时默认开启）
-          repeat: r.repeat !== false,
-          lastFired: typeof r.lastFired === 'string' ? r.lastFired : '',
-        }))
+    ? raw.reminders.filter((r) => r && (typeof r.time === 'string' || Number(r.at))).map(normalizeReminder)
     : []
   if (!MODE_IDS.includes(s.mode)) s.mode = 'clock'
+  if (!s.cd.lastTotal) s.cd.lastTotal = s.cd.total
 
   // 跨重启恢复进行中的计时：以 endAt 为准重新校准
   const t = Date.now()
@@ -119,11 +169,10 @@ function load() {
 // 模块级单例：展开视图与紧凑视图共享同一份状态
 const state = reactive(load())
 
-// 共享时钟：由心跳推进，供「日常时间」显示与「下一条提醒」这类派生计算依赖，
-// 避免每个组件各起一个定时器、也保证跨分钟时能自动重算
+// 共享时钟：只在「秒」变化时推进，避免 4Hz 无谓刷新时间类 UI
 export const now = ref(Date.now())
 
-// 正在"催"的提醒：{ id, nextAt, count }；确认（点通知 / 知道了）或停用后清空
+// 正在"催"的提醒：{ id, nextAt, repeats }；确认 / 停用 / 催够次数后清空
 export const firingReminder = ref(null)
 
 function save() {
@@ -133,7 +182,8 @@ function save() {
       JSON.stringify({
         mode: state.mode,
         cd: { ...state.cd },
-        focus: { ...state.focus },
+        focus: { ...state.focus, stats: { ...state.focus.stats } },
+        workSchedule: { ...state.workSchedule },
         reminders: state.reminders.map((r) => ({ ...r })),
       })
     )
@@ -142,8 +192,28 @@ function save() {
   }
 }
 
+// ---------- 提醒文案 ----------
+// 一次性提醒可能不在今天，所以要带上日期
+export function reminderWhenText(r, when = new Date(now.value)) {
+  if (!r) return ''
+  if (r.type !== 'once' || !r.at) return r.time
+  const d = new Date(r.at)
+  const sameDay = d.toDateString() === when.toDateString()
+  if (sameDay) return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  const tomorrow = new Date(when)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  if (d.toDateString() === tomorrow.toDateString()) return `明天 ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+export function reminderRepeatText(r) {
+  if (!r || r.repeatCount === 'off') return '仅提醒一次'
+  const cnt = r.repeatCount === 'unlimited' ? '直到确认' : `${r.repeatCount}次`
+  const iv = REPEAT_INTERVALS.find((x) => x.sec === r.repeatInterval)
+  return `${cnt} · 每${iv ? iv.label : '30秒'}`
+}
+
 // ---------- 动效 + 提醒 ----------
-// 结束 / 提醒：胶囊脉冲 + 警报音，紧凑态下再把岛切成通知态主动触达
 function alert(kind, payload = {}) {
   sfx.alarm()
   pulsePill('end')
@@ -151,15 +221,22 @@ function alert(kind, payload = {}) {
   const table = {
     countdown: {
       icon: 'timer',
-      accent: '#FF9F0A',
+      accent: '#30D158',
       title: '倒计时结束',
       detail: payload.detail || '时间到了',
+      source: 'countdown',
+      // 直接在岛上给出下一步，不用展开应用
+      actions: [
+        { id: 'again', label: '再来一次', primary: true },
+        { id: 'done', label: '完成' },
+      ],
+      duration: 11000,
     },
     focusEnd: {
       icon: 'focus',
       accent: '#BF5AF2',
-      title: '专注结束',
-      detail: `休息 ${Math.round(state.focus.breakMs / 60000)} 分钟`,
+      title: '专注完成',
+      detail: payload.detail || `休息 ${Math.round(state.focus.breakMs / 60000)} 分钟`,
     },
     breakEnd: {
       icon: 'focus',
@@ -169,63 +246,91 @@ function alert(kind, payload = {}) {
     },
     reminder: {
       icon: 'bell',
-      accent: '#30D158',
+      accent: '#FF9F0A',
       title: payload.label || '提醒',
-      detail: payload.again ? `${payload.time} · 还没确认，再提醒一次` : payload.time || '',
-      ack: true, // 通知条右侧给一个「知道了」按钮
+      detail: payload.again
+        ? `${payload.when} · 还没确认，再提醒一次`
+        : payload.when || '',
+      ack: true,
       source: 'reminder',
       id: payload.id,
     },
   }
+  const spec = table[kind] || table.countdown
   // 已经播过警报音了，通知条不再叠一层提示音
-  showNotice({ silent: true, ...(table[kind] || table.countdown) }, 7000)
+  showNotice({ silent: true, ...spec }, spec.duration || 7000)
 }
 
-// 开始：轻量的脉冲反馈 + 上行音，不打断内容
 function announceStart() {
   sfx.start()
   pulsePill('start')
 }
 
-// 专注阶段结束 → 结算并自动进入下一阶段（番茄钟循环）
-function finishFocusPhase() {
-  const f = state.focus
-  if (f.phase === 'focus') {
-    f.rounds += 1
-    f.phase = 'break'
-    f.remaining = f.breakMs
-    f.endAt = Date.now() + f.breakMs
-    f.running = true
-    alert('focusEnd')
-  } else {
-    f.phase = 'focus'
-    f.remaining = f.focusMs
-    f.endAt = Date.now() + f.focusMs
-    f.running = true
-    alert('breakEnd')
+// ---------- 专注统计 ----------
+function addFocusStat(minutes, rounds = 0) {
+  const k = dayKey()
+  const cur = state.focus.stats[k] || { minutes: 0, rounds: 0 }
+  cur.minutes += Math.max(0, Math.round(minutes))
+  cur.rounds += rounds
+  state.focus.stats[k] = cur
+  pruneStats()
+}
+
+// 只保留最近 STATS_KEEP_DAYS 天，避免统计无限增长
+function pruneStats() {
+  const keys = Object.keys(state.focus.stats)
+  if (keys.length <= STATS_KEEP_DAYS) return
+  keys.sort()
+  for (const k of keys.slice(0, keys.length - STATS_KEEP_DAYS)) delete state.focus.stats[k]
+}
+
+export const todayStats = computed(() => state.focus.stats[dayKey(new Date(now.value))] || { minutes: 0, rounds: 0 })
+
+// 当前生效的工作时间统计（跟着共享时钟走）
+export const work = computed(() => workStats(state.workSchedule, new Date(now.value)))
+
+// ---------- 提醒触发 ----------
+function fireReminder(r, again = false) {
+  alert('reminder', {
+    label: r.label,
+    when: reminderWhenText(r),
+    id: r.id,
+    again,
+  })
+  if (r.repeatCount !== 'off') {
+    firingReminder.value = { id: r.id, nextAt: Date.now() + r.repeatInterval * 1000, repeats: 0 }
   }
-  save()
 }
 
 function checkReminders() {
   const d = new Date()
   const hhmm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
   const today = dayKey(d)
+  const t = d.getTime()
   let changed = false
+
   for (const r of state.reminders) {
-    if (!r.enabled || r.time !== hhmm || r.lastFired === today) continue
-    r.lastFired = today
-    changed = true
-    alert('reminder', { label: r.label, time: r.time, id: r.id })
-    // 开了「多次提醒」：没人确认就每隔 REPEAT_MS 再催一次
-    if (r.repeat) {
-      firingReminder.value = { id: r.id, nextAt: Date.now() + REPEAT_MS, count: 1 }
+    if (!r.enabled) continue
+    let due = false
+    if (r.type === 'once') {
+      // 一次性：到点即触发，之后自动完成
+      due = r.at > 0 && t >= r.at && r.lastFired !== 'once'
+    } else {
+      due = r.time === hhmm && r.lastFired !== today
     }
+    if (!due) continue
+
+    r.lastFired = r.type === 'once' ? 'once' : today
+    if (r.type === 'once') {
+      r.done = true
+      r.enabled = false // 触发后自动完成，不再重复
+    }
+    changed = true
+    fireReminder(r)
   }
   if (changed) save()
 }
 
-// 确认提醒：停止继续催（提醒本身保持启用，明天照常）
 function ackReminder(id) {
   const fr = firingReminder.value
   if (!fr) return
@@ -240,10 +345,61 @@ onNoticeDismiss((payload, reason) => {
   ackReminder(payload.id)
 })
 
-// 模块级心跳：即使组件卸载，计时与提醒也持续推进
+// ---------- 倒计时：结束后的「再来一次 / 完成」 ----------
+// 放在模块级，这样通知条上的动作按钮可以直接调用，不必先 useTimeApp()
+function cdAgain() {
+  const cd = state.cd
+  const ms = cd.lastTotal || cd.total
+  cd.total = ms
+  cd.remaining = ms
+  cd.finished = false
+  cd.endAt = Date.now() + ms
+  cd.running = true
+  announceStart()
+  save()
+}
+
+function cdDismiss() {
+  state.cd.finished = false
+  state.cd.remaining = state.cd.total
+  save()
+}
+
+// 岛上点了「再来一次 / 完成」
+onNoticeAction((payload, actionId) => {
+  if (!payload || payload.source !== 'countdown') return
+  if (actionId === 'again') cdAgain()
+  else if (actionId === 'done') cdDismiss()
+})
+
+// 专注阶段结束 → 结算 + 统计 + 自动进入下一阶段
+function finishFocusPhase() {
+  const f = state.focus
+  if (f.phase === 'focus') {
+    f.rounds += 1
+    addFocusStat(f.focusMs / 60000, 1)
+    f.phase = 'break'
+    f.remaining = f.breakMs
+    f.endAt = Date.now() + f.breakMs
+    f.running = true
+    alert('focusEnd', {
+      detail: f.taskTitle ? `${f.taskTitle} · ${durText(f.focusMs / 60000)}` : undefined,
+    })
+  } else {
+    f.phase = 'focus'
+    f.remaining = f.focusMs
+    f.endAt = Date.now() + f.focusMs
+    f.running = true
+    alert('breakEnd')
+  }
+  save()
+}
+
+// ---------- 模块级心跳 ----------
+// 计时用 250ms 保证环形进度平滑；时间类 UI 只在秒变化时推进
 setInterval(() => {
   const t = Date.now()
-  now.value = t
+  if (Math.floor(t / 1000) !== Math.floor(now.value / 1000)) now.value = t
 
   const cd = state.cd
   if (cd.running && cd.endAt) {
@@ -253,6 +409,7 @@ setInterval(() => {
       cd.running = false
       cd.endAt = null
       cd.finished = true
+      cd.lastTotal = cd.total
       alert('countdown')
       save()
     } else {
@@ -267,31 +424,48 @@ setInterval(() => {
     else f.remaining = left
   }
 
-  // 未被确认的提醒：每 REPEAT_MS 再催一次（停用 / 删除 / 关掉多次提醒都会停下）
+  // 未被确认的提醒：按策略继续催
   const fr = firingReminder.value
   if (fr) {
     const r = state.reminders.find((x) => x.id === fr.id)
-    if (!r || !r.enabled || !r.repeat) {
+    const maxRepeats = !r || r.repeatCount === 'off' ? 0 : r.repeatCount === 'unlimited' ? Infinity : Number(r.repeatCount) || 0
+    if (!r || !r.enabled || maxRepeats === 0 || fr.repeats >= maxRepeats) {
       firingReminder.value = null
     } else if (t >= fr.nextAt) {
-      firingReminder.value = { id: fr.id, nextAt: t + REPEAT_MS, count: fr.count + 1 }
-      alert('reminder', { label: r.label, time: r.time, id: r.id, again: true })
+      firingReminder.value = {
+        id: fr.id,
+        nextAt: t + r.repeatInterval * 1000,
+        repeats: fr.repeats + 1,
+      }
+      fireReminder(r, true)
     }
   }
 
   checkReminders()
 }, 250)
 
-// 下一次将要触发的提醒（用于紧凑态显示）；默认读取共享时钟，保证跨分钟会重算
+// ---------- 下一次提醒 ----------
+// 每日提醒按 HH:MM 找今天/明天；一次性提醒按绝对时间找
 export function nextReminder(when = new Date(now.value)) {
   const list = state.reminders.filter((r) => r.enabled)
   if (!list.length) return null
   const nowMin = when.getHours() * 60 + when.getMinutes()
-  const sorted = list
-    .map((r) => ({ r, min: toMinutes(r.time) }))
-    .sort((a, b) => a.min - b.min)
-  const next = sorted.find((x) => x.min >= nowMin)
-  return (next || sorted[0]).r
+  const t = when.getTime()
+
+  const candidates = list.map((r) => {
+    if (r.type === 'once') {
+      return { r, ts: r.at || Infinity }
+    }
+    let min = hm(r.time, 0)
+    let dayOffset = 0
+    if (min < nowMin) {
+      dayOffset = 1
+      min += 1440
+    }
+    return { r, ts: t + (min - nowMin) * 60000, dayOffset }
+  })
+  candidates.sort((a, b) => a.ts - b.ts)
+  return candidates[0]?.r || null
 }
 
 export function useTimeApp() {
@@ -348,7 +522,13 @@ export function useTimeApp() {
     cdSetDuration(min * 60000)
   }
 
-  // ----- 专注时间（番茄钟，阶段结束自动进入下一阶段） -----
+  // ----- 专注 -----
+  function focusSetTask(taskId, taskTitle) {
+    state.focus.taskId = taskId || null
+    state.focus.taskTitle = taskTitle || ''
+    save()
+  }
+
   function focusStart() {
     if (state.focus.running) return
     const f = state.focus
@@ -382,13 +562,22 @@ export function useTimeApp() {
     save()
   }
 
-  // 手动跳到下一阶段（当前阶段直接作废）
   function focusSkip() {
     const f = state.focus
     f.running = false
     f.endAt = null
     f.phase = f.phase === 'focus' ? 'break' : 'focus'
     f.remaining = f.phase === 'focus' ? f.focusMs : f.breakMs
+    save()
+  }
+
+  // 「结束」：停表并回到就绪态（不结算统计，本轮作废）
+  function focusStop() {
+    const f = state.focus
+    f.running = false
+    f.endAt = null
+    f.phase = 'focus'
+    f.remaining = f.focusMs
     save()
   }
 
@@ -402,21 +591,38 @@ export function useTimeApp() {
     save()
   }
 
-  // ----- 提醒 -----
-  function addReminder(time, label = '', repeat = true) {
-    if (!/^\d{1,2}:\d{2}$/.test(String(time || ''))) return null
-    const r = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      time,
-      label: String(label || '').trim(),
-      enabled: true,
-      repeat: repeat !== false,
-      lastFired: '',
-    }
-    state.reminders.push(r)
-    state.reminders.sort((a, b) => toMinutes(a.time) - toMinutes(b.time))
+  // ----- 作息 -----
+  function setWorkSchedule(patch) {
+    state.workSchedule = normalizeSchedule({ ...state.workSchedule, ...patch })
     save()
-    return r
+  }
+
+  // ----- 提醒 -----
+  // type: 'daily' | 'once'；once 传 at（绝对时间戳），daily 传 time
+  function addReminder({ type = 'daily', time = '09:00', at = 0, label = '', repeatCount = 'unlimited', repeatInterval = 30 } = {}) {
+    const item = normalizeReminder({
+      id: newId('rem'),
+      type,
+      time,
+      at,
+      label,
+      enabled: true,
+      repeatCount,
+      repeatInterval,
+    })
+    if (item.type === 'once' && !item.at) return null
+    state.reminders.push(item)
+    sortReminders()
+    save()
+    return item
+  }
+
+  function sortReminders() {
+    state.reminders.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'daily' ? -1 : 1
+      if (a.type === 'once') return (a.at || 0) - (b.at || 0)
+      return hm(a.time, 0) - hm(b.time, 0)
+    })
   }
 
   function removeReminder(id) {
@@ -431,43 +637,65 @@ export function useTimeApp() {
     const r = state.reminders.find((x) => x.id === id)
     if (!r) return
     r.enabled = !r.enabled
-    // 重新启用时清掉"今天已提醒"标记，否则当天不会再响
-    if (r.enabled) r.lastFired = ''
-    // 停用即停止继续催
-    else ackReminder(id)
+    // 重新启用时清掉「已触发」标记，否则当天 / 本次不会再响
+    if (r.enabled) {
+      r.lastFired = ''
+      r.done = false
+      if (r.type === 'once' && r.at <= Date.now()) {
+        // 一次性提醒已经过期，重新启用时顺延到下一个整点
+        const d = new Date(Date.now() + 3600000)
+        d.setMinutes(0, 0, 0)
+        r.at = d.getTime()
+        r.time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+      }
+    } else {
+      ackReminder(id)
+    }
     save()
   }
 
-  // 「多次提醒」开关：关掉即停止继续催
-  function toggleReminderRepeat(id) {
+  function setReminderRepeat(id, { repeatCount, repeatInterval }) {
     const r = state.reminders.find((x) => x.id === id)
     if (!r) return
-    r.repeat = !r.repeat
-    if (!r.repeat) ackReminder(id)
+    if (repeatCount !== undefined) r.repeatCount = repeatCount
+    if (repeatInterval !== undefined) r.repeatInterval = repeatInterval
+    if (r.repeatCount === 'off') ackReminder(id)
     save()
   }
 
   return {
     state,
     setMode,
+    // 倒计时
     cdStart,
     cdPause,
     cdToggle,
     cdReset,
     cdSetDuration,
     cdSetPreset,
+    cdAgain,
+    cdDismiss,
+    // 专注
     focusStart,
     focusPause,
     focusToggle,
     focusReset,
     focusSkip,
+    focusStop,
     focusSetDuration,
+    focusSetTask,
+    // 作息
+    setWorkSchedule,
+    // 提醒
     addReminder,
     removeReminder,
     toggleReminder,
-    toggleReminderRepeat,
+    setReminderRepeat,
     ackReminder,
     firingReminder,
     nextReminder,
+    // 统计
+    todayStats,
+    work,
   }
 }

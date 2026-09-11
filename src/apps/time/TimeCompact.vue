@@ -1,53 +1,54 @@
 <template>
   <div class="time-compact">
-    <!-- 左：状态小圆点（运行中脉动） -->
-    <span class="side">
-      <span class="dot" :class="{ pulse: running }" :style="{ background: accent }" />
+    <!-- 左：模式图标（计时运行中呼吸） -->
+    <span class="ico-tile" :class="{ beat: running }" :style="{ background: tileBg }">
+      <Icon :name="mode.icon" class="ico-svg" :style="{ color: accent }" />
     </span>
 
-    <!-- 中：时间（左右占位等宽，所以是真正的居中） -->
-    <span class="text">{{ text }}</span>
+    <!-- 中：主值 + 次行 -->
+    <span class="text">
+      <span class="line1">{{ line1 }}</span>
+      <span class="line2">{{ line2 }}</span>
+    </span>
 
     <!-- 右：环形进度 -->
-    <span class="side">
-      <svg class="ring" viewBox="0 0 36 36">
-        <circle class="ring-track" cx="18" cy="18" r="14" />
-        <circle
-          class="ring-bar"
-          cx="18"
-          cy="18"
-          r="14"
-          :stroke-dasharray="C"
-          :stroke-dashoffset="offset"
-          :style="{ stroke: accent }"
-        />
-      </svg>
-    </span>
+    <svg class="ring" viewBox="0 0 36 36">
+      <circle class="ring-track" cx="18" cy="18" r="14" />
+      <circle
+        class="ring-bar"
+        cx="18"
+        cy="18"
+        r="14"
+        :stroke-dasharray="C"
+        :stroke-dashoffset="offset"
+        :style="{ stroke: accent }"
+      />
+    </svg>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
-import { MODES, fmtMs, nextReminder, now, toMinutes, useTimeApp } from './useTimeApp'
+import Icon from '../../components/Icon.vue'
+import { MODES, fmtMs, nextReminder, now, reminderWhenText, toMinutes, useTimeApp } from './useTimeApp'
 
 const { state } = useTimeApp()
 
 const mode = computed(() => MODES.find((m) => m.id === state.mode) || MODES[0])
-
 const pad2 = (x) => String(x).padStart(2, '0')
 
-// 日常时间 / 倒计时 / 专注 / 下一条提醒全部由共享时钟驱动，组件不另起定时器
-const text = computed(() => {
+const d = computed(() => new Date(now.value))
+
+// 主值：每个模式「一眼要看的那一个数」
+const line1 = computed(() => {
   switch (state.mode) {
-    case 'clock': {
-      const d = new Date(now.value)
-      return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
-    }
+    case 'clock':
+      return `${pad2(d.value.getHours())}:${pad2(d.value.getMinutes())}`
     case 'countdown':
       return fmtMs(state.cd.remaining)
     case 'reminder': {
       const r = nextReminder()
-      return r ? r.time : '无提醒'
+      return r ? reminderWhenText(r) : '暂无'
     }
     case 'focus':
       return fmtMs(state.focus.remaining)
@@ -56,15 +57,52 @@ const text = computed(() => {
   }
 })
 
-// 环进度（0..1）：每种模式都给它一个"正在流逝"的含义
+// 次行：上下文，不堆信息
+const line2 = computed(() => {
+  switch (state.mode) {
+    case 'clock':
+      return `${['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.value.getDay()]} · ${d.value.getMonth() + 1}月${d.value.getDate()}日`
+    case 'countdown':
+      if (state.cd.finished) return '倒计时结束'
+      return state.cd.running ? '计时中' : '倒计时'
+    case 'reminder': {
+      const r = nextReminder()
+      return r ? r.label || '提醒' : '暂无提醒'
+    }
+    case 'focus': {
+      const f = state.focus
+      const phase = f.running ? (f.phase === 'focus' ? '专注中' : '休息中') : '已暂停'
+      return f.taskTitle ? `${phase} · ${f.taskTitle}` : phase
+    }
+    default:
+      return ''
+  }
+})
+
+// 专注 / 提醒 / 倒计时完成时换色
+const accent = computed(() => {
+  if (state.mode === 'focus') return state.focus.phase === 'focus' ? '#BF5AF2' : '#30D158'
+  if (state.mode === 'countdown' && state.cd.finished) return '#FF453A'
+  return mode.value.accent
+})
+
+const tileBg = computed(() => {
+  const map = {
+    '#0A84FF': 'rgba(10, 132, 255, 0.16)',
+    '#30D158': 'rgba(48, 209, 88, 0.16)',
+    '#FF9F0A': 'rgba(255, 159, 10, 0.16)',
+    '#BF5AF2': 'rgba(191, 90, 242, 0.16)',
+    '#FF453A': 'rgba(255, 69, 58, 0.18)',
+  }
+  return map[accent.value] || 'rgba(255, 255, 255, 0.08)'
+})
+
+// 环进度：每种模式都给一个「正在流逝」的含义
 const progress = computed(() => {
   const clamp = (v) => Math.max(0, Math.min(1, v))
   switch (state.mode) {
-    case 'clock': {
-      // 当前这一分钟走完多少（带毫秒，跟着 250ms 心跳平滑推进）
-      const d = new Date(now.value)
-      return clamp((d.getSeconds() + d.getMilliseconds() / 1000) / 60)
-    }
+    case 'clock':
+      return clamp((d.value.getSeconds() + d.value.getMilliseconds() / 1000) / 60)
     case 'countdown': {
       const t = state.cd.total
       return t > 0 ? clamp(state.cd.remaining / t) : 0
@@ -74,27 +112,21 @@ const progress = computed(() => {
       return t > 0 ? clamp(state.focus.remaining / t) : 0
     }
     case 'reminder': {
-      // 距下一次提醒还有多久，按"最近一小时"归一化
       const r = nextReminder()
       if (!r) return 0
-      const d = new Date(now.value)
-      const nowMin = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60
-      let diff = toMinutes(r.time) - nowMin
-      if (diff < 0) diff += 24 * 60
-      return clamp(diff / 60)
+      let diffMin
+      if (r.type === 'once' && r.at) {
+        diffMin = (r.at - now.value) / 60000
+      } else {
+        const nowMin = d.value.getHours() * 60 + d.value.getMinutes() + d.value.getSeconds() / 60
+        diffMin = toMinutes(r.time) - nowMin
+        if (diffMin < 0) diffMin += 24 * 60
+      }
+      return clamp(diffMin / 60)
     }
     default:
       return 0
   }
-})
-
-// 专注态跟随阶段换色，其余跟随模式配色
-const accent = computed(() => {
-  if (state.mode === 'focus') {
-    return state.focus.phase === 'focus' ? '#BF5AF2' : '#30D158'
-  }
-  if (state.mode === 'countdown' && state.cd.finished) return '#FF453A'
-  return mode.value.accent
 })
 
 const running = computed(() => {
@@ -103,7 +135,6 @@ const running = computed(() => {
   return false
 })
 
-// 环半径 14（viewBox 36），周长用于 dash 进度
 const C = 2 * Math.PI * 14
 const offset = computed(() => C * (1 - progress.value))
 </script>
@@ -112,61 +143,71 @@ const offset = computed(() => C * (1 - progress.value))
 .time-compact {
   display: flex;
   align-items: center;
+  gap: 8px;
   height: 100%;
-  padding: 0 14px;
+  padding: 0 13px;
   color: #f5f5f7;
 }
 
-/* 左右等宽占位：中间的时间因此正好落在胶囊中心 */
-.side {
-  width: 18px;
-  flex-shrink: 0;
+.ico-tile {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
   flex-shrink: 0;
   transition: background 0.3s ease;
 }
-/* 计时进行中：圆点呼吸，表示还在跑 */
-.dot.pulse {
-  animation: dotPulse 1.6s ease-in-out infinite;
+.ico-svg {
+  width: 13px;
+  height: 13px;
+  transition: color 0.3s ease;
 }
-@keyframes dotPulse {
+/* 计时运行中：图标轻轻呼吸 */
+.ico-tile.beat {
+  animation: beat 1.7s ease-in-out infinite;
+}
+@keyframes beat {
   0%,
   100% {
     opacity: 1;
-    transform: scale(1);
   }
   50% {
-    opacity: 0.45;
-    transform: scale(0.7);
+    opacity: 0.55;
   }
 }
 
 .text {
   flex: 1;
   min-width: 0;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.line1 {
   font-size: 13px;
   font-weight: 700;
-  line-height: 1;
-  transform: translateY(-1px); /* 光学校正：抵消字体基线偏下的视差 */
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.line2 {
+  font-size: 9.5px;
+  line-height: 1.15;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* 环形进度：不设 transition，靠 250ms 心跳平滑推进，
-   避免整分钟归零时出现"倒着绕一圈"的动画 */
+/* 环形进度：不设 transition，靠 250ms 心跳平滑推进 */
 .ring {
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
   transform: rotate(-90deg);
   flex-shrink: 0;
 }
