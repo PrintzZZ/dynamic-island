@@ -121,6 +121,52 @@
       <path d="M18.8 13.6a7 7 0 0 1-11.7 4.4l-1.8-1.7" />
       <path d="M5.3 20.5v-4.3h4.3" />
     </template>
+    <!-- 材料箱 -->
+    <template v-else-if="name === 'box'">
+      <path d="M2.8 4.6h18.4v3.6H2.8z" />
+      <path d="M4.2 8.2h15.6v10.4a1.8 1.8 0 0 1-1.8 1.8H6a1.8 1.8 0 0 1-1.8-1.8z" />
+      <path d="M9.8 12.2h4.4" />
+    </template>
+    <template v-else-if="name === 'package'">
+      <path d="M12 3.2 20.4 7.6v8.8L12 20.8 3.6 16.4V7.6z" />
+      <path d="M3.6 7.6 12 12l8.4-4.4" />
+      <path d="M12 12v8.8" />
+    </template>
+    <template v-else-if="name === 'folder'">
+      <path d="M3.4 7.2a2 2 0 0 1 2-2h3.3l2 2.4h7.9a2 2 0 0 1 2 2v8.2a2 2 0 0 1-2 2H5.4a2 2 0 0 1-2-2z" />
+    </template>
+    <template v-else-if="name === 'folder-open'">
+      <path d="M3.4 7.2a2 2 0 0 1 2-2h3.3l2 2.4h7.9a2 2 0 0 1 2 2v1" />
+      <path d="M3.4 8.8v8.8a2 2 0 0 0 2 2h11.2a2 2 0 0 0 1.93-1.47l1.55-5.4a1.4 1.4 0 0 0-1.35-1.8H6.2a2 2 0 0 0-1.93 1.45z" />
+    </template>
+    <template v-else-if="name === 'chevron-down'">
+      <path d="M6.6 9.6 12 15l5.4-5.4" />
+    </template>
+    <template v-else-if="name === 'more'">
+      <circle cx="6" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="12" r="1.5" fill="currentColor" stroke="none" />
+    </template>
+    <template v-else-if="name === 'warning'">
+      <path d="M12 4.4 21 19.6H3z" />
+      <path d="M12 10.2v4" />
+      <path d="M12 16.9v.1" />
+    </template>
+    <template v-else-if="name === 'drop-in'">
+      <path d="M12 3.6v10.2" />
+      <path d="M7.8 9.8 12 14l4.2-4.2" />
+      <path d="M4.6 17.2v1.6a1.6 1.6 0 0 0 1.6 1.6h11.6a1.6 1.6 0 0 0 1.6-1.6v-1.6" />
+    </template>
+    <template v-else-if="name === 'image'">
+      <rect x="3.6" y="5" width="16.8" height="14" rx="2.4" />
+      <circle cx="9" cy="10" r="1.6" />
+      <path d="M4.4 16.6 9.6 12l4 3.4 2.6-2.2 3.4 3" />
+    </template>
+    <template v-else-if="name === 'archive'">
+      <rect x="3.6" y="5" width="16.8" height="14" rx="2.4" />
+      <path d="M9.4 5v6.2l1.5-1.3 1.5 1.3V5" />
+      <path d="M3.6 15.4h16.8" />
+    </template>
     <template v-else-if="name === 'arrow-down'">
       <path d="M12 4.5v12" />
       <path d="M6.9 12.9 12 18l5.1-5.1" />

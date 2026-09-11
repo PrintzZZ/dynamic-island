@@ -6,11 +6,12 @@
       @mousedown="onPillDown"
     >
       <Transition name="slot">
-        <!-- 通知态：临时接管胶囊，主动"触达"用户 -->
+        <!-- 通知态 / 接收态 / 进度态：临时接管胶囊，主动"触达"用户 -->
         <div
           v-if="island.notice"
           key="notice"
           class="notice-slot"
+          :class="`is-${island.notice.variant || 'notice'}`"
           :style="{ '--notice-accent': island.notice.accent || '#ffd60a' }"
           @click.stop="onNoticeBody"
         >
@@ -21,9 +22,13 @@
             <div class="notice-text">
               <div class="notice-title">{{ island.notice.title }}</div>
               <div class="notice-detail">{{ island.notice.detail }}</div>
+              <div v-if="hasNoticeProgress" class="notice-bar">
+                <div class="notice-bar-fill" :style="{ width: `${island.notice.progress}%` }" />
+              </div>
             </div>
+            <span v-if="island.notice.spinning" class="notice-spin" />
             <button
-              v-if="island.notice.url"
+              v-else-if="island.notice.url"
               class="notice-act"
               title="打开链接"
               @click.stop="onNoticeOpen"
@@ -97,11 +102,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import gsap from 'gsap'
 import Icon from './Icon.vue'
 import { useIsland, bindPill } from '../composables/useIsland'
 import { toggleMuted, isMuted, sfx } from '../utils/sound'
+import { useMaterialBox } from '../apps/materialBox/useMaterialBox'
+
+// 文件拖入是「岛屿级」能力：不管材料箱应用有没有打开都要能接收
+const mbox = useMaterialBox()
+const hasNoticeProgress = computed(() => typeof island.notice?.progress === 'number')
 
 const {
   island,
@@ -389,20 +399,78 @@ function onKey(e) {
   doCollapse()
 }
 
+// ---------- 文件拖入（材料箱） ----------
+// 拖拽进入时：窗口必须临时关闭「鼠标穿透」，否则 Windows 不会把 drop 投递过来
+let dragDepth = 0
+
+function onDragEnter(e) {
+  if (!mbox.dataTransferHasFiles(e.dataTransfer)) return
+  e.preventDefault()
+  dragDepth++
+  if (window.api) window.api.setClickThrough(false)
+  if (dragDepth === 1) {
+    mbox.enterDropState(e.dataTransfer.items?.length || e.dataTransfer.files?.length || 1)
+  }
+}
+
+function onDragOver(e) {
+  if (!mbox.dataTransferHasFiles(e.dataTransfer)) return
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+}
+
+function onDragLeave() {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) {
+    mbox.leaveDropState()
+    syncClickThrough(lastPointer.x, lastPointer.y)
+  }
+}
+
+async function onDrop(e) {
+  if (!mbox.dataTransferHasFiles(e.dataTransfer)) return
+  e.preventDefault()
+  dragDepth = 0
+  const paths = mbox.pathsFromDataTransfer(e.dataTransfer)
+  mbox.leaveDropState()
+  syncClickThrough(lastPointer.x, lastPointer.y)
+  if (paths.length) await mbox.addPaths(paths)
+}
+
 onMounted(async () => {
   bindPill(pillEl.value)
   window.addEventListener('mousemove', onMove)
   window.addEventListener('click', onClick)
   window.addEventListener('keydown', onKey)
+  window.addEventListener('dragenter', onDragEnter)
+  window.addEventListener('dragover', onDragOver)
+  window.addEventListener('dragleave', onDragLeave)
+  window.addEventListener('drop', onDrop)
   if (window.api) {
     window.api.onSwitchApp((id) => switchApp(id))
     window.api.onDockToggle(() => toggleDock())
     window.api.onSoundToggle(() => {
       toggleMuted()
-      window.api.reportSound(isMuted())
+      // 菜单里那一项是「音效」勾选框：checked 表示"有声音"，
+      // 所以要上报 !isMuted()，上报 isMuted() 会让勾选状态正好反过来
+      window.api.reportSound(!isMuted())
     })
     window.api.reportDock(island.docked)
-    window.api.reportSound(isMuted())
+    window.api.reportSound(!isMuted())
+    // 原生右键菜单关闭后重新判定：菜单期间收不到 mousemove，
+    // 不同步的话 hovering 会永远停在 true，岛再也不会自动收起
+    window.api.onMenuClosed?.((info) => {
+      if (!info) return
+      if (typeof info.x === 'number') lastPointer = { x: info.x, y: info.y }
+      const inside = hitTest(lastPointer.x, lastPointer.y)
+      hovering = inside
+      window.api.setClickThrough(!inside)
+      // keepOpen：用户点了具体菜单项（比如"材料箱 → 打包"），
+      // 面板刚被打开，这时候把它收起来就等于什么都没发生
+      if (info.keepOpen || inside) return
+      suppressExpand = false
+      collapse()
+    })
     // 若启动即吸附，把窗口贴到顶部
     if (island.docked) {
       const ws = await window.api.getWindowState()
@@ -415,6 +483,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onMove)
   window.removeEventListener('click', onClick)
   window.removeEventListener('keydown', onKey)
+  window.removeEventListener('dragenter', onDragEnter)
+  window.removeEventListener('dragover', onDragOver)
+  window.removeEventListener('dragleave', onDragLeave)
+  window.removeEventListener('drop', onDrop)
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', onDragEnd)
 })
@@ -572,6 +644,63 @@ onBeforeUnmount(() => {
 .notice-act-ico {
   width: 15px;
   height: 15px;
+}
+
+/* 进度条（打包 / 添加中） */
+.notice-bar {
+  margin-top: 5px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+.notice-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--notice-accent, #ffd60a);
+  transition: width 0.2s linear;
+}
+
+/* 忙碌指示：细环旋转，比跳动的点更"稳定专业" */
+.notice-spin {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--notice-accent, #ffd60a);
+  animation: noticeSpin 0.8s linear infinite;
+}
+@keyframes noticeSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 接收态（把文件拖到岛上）：强调色描边 + 呼吸光晕，克制不夸张 */
+.notice-slot.is-drop .notice-inner {
+  border-radius: 24px;
+  background: rgba(10, 132, 255, 0.14);
+  animation: dropGlow 1.5s ease-in-out infinite;
+}
+.notice-slot.is-drop .notice-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  animation: none;
+}
+.notice-slot.is-drop .notice-ico {
+  width: 20px;
+  height: 20px;
+}
+@keyframes dropGlow {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 1.5px rgba(10, 132, 255, 0.55), 0 0 10px rgba(10, 132, 255, 0.1);
+  }
+  50% {
+    box-shadow: inset 0 0 0 2px rgba(10, 132, 255, 0.95), 0 0 22px rgba(10, 132, 255, 0.35);
+  }
 }
 
 /* 紧凑 / 展开交叉淡入淡出：带一点回弹的缩放，让内容"弹"出来。

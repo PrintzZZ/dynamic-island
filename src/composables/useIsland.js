@@ -128,13 +128,22 @@ function armNotice(ms) {
 }
 
 // 弹出通知：胶囊形变到通知尺寸并播放提示音，倒计时结束后自动回到原状态
-// payload.silent = true 时不播提示音（调用方已经自己放过音效了）
+// payload.silent = true 时不再播提示音（调用方已放过音效）
+// payload.sticky = true 时常驻，只能显式 dismissNotice()（用于接收态 / 打包中）
 export function showNotice(payload, duration = 6000) {
   if (!payload) return
   island.notice = { ...payload }
   syncShape()
   if (!payload.silent) sfx.notice()
-  armNotice(duration)
+  if (payload.sticky) clearNoticeTimer()
+  else armNotice(duration)
+}
+
+// 就地更新通知内容（改属性不换引用，因此不会重播入场动画、也不会重置倒计时）
+export function updateNotice(patch) {
+  if (!island.notice || !patch) return false
+  Object.assign(island.notice, patch)
+  return true
 }
 
 export function dismissNotice(reason = 'auto') {
@@ -190,64 +199,67 @@ export function pulsePill(kind = 'start') {
   el.addEventListener('animationend', onEnd)
 }
 
+// ---------- 岛屿动作 ----------
+// 这些动作不依赖任何组件上下文，统一放在模块级并具名导出：
+// 这样应用模块（如材料箱）也能直接调用 switchApp，而不必先 useIsland()
+export function expand() {
+  if (island.mode === 'expanded') return
+  // 通知展示期间不展开，避免把刚弹出的提醒顶掉（例如悬停延迟到期）
+  if (island.notice) return
+  island.mode = 'expanded'
+  syncShape()
+  sfx.expand()
+}
+
+// 自动收起（悬停离开），受「固定」约束
+export function collapse() {
+  if (island.pinned) return
+  if (island.mode === 'compact') return
+  island.mode = 'compact'
+  syncShape()
+  sfx.collapse()
+}
+
+// 显式收起（按钮 / Esc），无视固定
+export function forceCollapse() {
+  if (island.mode === 'compact') return
+  island.mode = 'compact'
+  syncShape()
+  sfx.collapse()
+}
+
+export function toggle() {
+  island.mode === 'compact' ? expand() : forceCollapse()
+}
+
+export function switchApp(id) {
+  if (!getApp(id)) return
+  // 从托盘 / 右键菜单切应用时，先收掉正在展示的提醒，否则面板会被通知态挡住
+  dismissNotice()
+  if (island.activeAppId !== id) sfx.switchApp()
+  island.activeAppId = id
+  expand()
+}
+
+export function togglePin() {
+  island.pinned = !island.pinned
+}
+
+// 吸附 / 解除吸附：圆角 + 顶部偏移一起过渡
+export function setDock(value) {
+  const next = !!value
+  if (island.docked === next) return
+  island.docked = next
+  if (window.api) window.api.reportDock(next)
+  sfx[next ? 'dock' : 'undock']()
+  syncShape()
+}
+
+export function toggleDock() {
+  setDock(!island.docked)
+}
+
 export function useIsland() {
-  function expand() {
-    if (island.mode === 'expanded') return
-    // 通知展示期间不展开，避免把刚弹出的提醒顶掉（例如悬停延迟到期）
-    if (island.notice) return
-    island.mode = 'expanded'
-    syncShape()
-    sfx.expand()
-  }
-
-  // 自动收起（悬停离开），受"固定"约束
-  function collapse() {
-    if (island.pinned) return
-    if (island.mode === 'compact') return
-    island.mode = 'compact'
-    syncShape()
-    sfx.collapse()
-  }
-
-  // 显式收起（按钮 / Esc），无视固定
-  function forceCollapse() {
-    if (island.mode === 'compact') return
-    island.mode = 'compact'
-    syncShape()
-    sfx.collapse()
-  }
-
-  function toggle() {
-    island.mode === 'compact' ? expand() : forceCollapse()
-  }
-
-  function switchApp(id) {
-    if (!getApp(id)) return
-    // 从托盘菜单切应用时，先收掉正在展示的提醒，否则面板会被通知态挡住
-    dismissNotice()
-    if (island.activeAppId !== id) sfx.switchApp()
-    island.activeAppId = id
-    expand()
-  }
-
-  function togglePin() {
-    island.pinned = !island.pinned
-  }
-
-  // 吸附 / 解除吸附：圆角 + 顶部偏移一起过渡
-  function setDock(value) {
-    const next = !!value
-    if (island.docked === next) return
-    island.docked = next
-    if (window.api) window.api.reportDock(next)
-    sfx[next ? 'dock' : 'undock']()
-    syncShape()
-  }
-
-  function toggleDock() {
-    setDock(!island.docked)
-  }
-
   return {
     island,
     activeApp,

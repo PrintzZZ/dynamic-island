@@ -12,6 +12,9 @@ const {
 const { spawn } = require('child_process')
 const fs = require('fs')
 const path = require('path')
+// 用 import 而不是 require：入口按 ESM 解析，只有 import 才会被 Rollup 打进产物，
+// require('./xxx') 会被原样保留成运行期调用，打包后就找不到文件了。
+import * as mbox from './materialbox.js'
 
 // 允许渲染进程在无用户手势下播放 Web Audio 音效
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
@@ -166,15 +169,28 @@ function clipLoad() {
   }
 }
 
+function clipWriteNow() {
+  try {
+    fs.writeFileSync(clipStorePath(), JSON.stringify(clipItems))
+  } catch (err) {
+    console.error('保存剪贴板历史失败：', err)
+  }
+}
+
+// 退出前强制落盘，避免最后 400ms 内的复制记录丢失
+function clipFlush() {
+  if (clipSaveTimer) {
+    clearTimeout(clipSaveTimer)
+    clipSaveTimer = null
+  }
+  clipWriteNow()
+}
+
 function clipSave() {
   if (clipSaveTimer) return
   clipSaveTimer = setTimeout(() => {
     clipSaveTimer = null
-    try {
-      fs.writeFileSync(clipStorePath(), JSON.stringify(clipItems))
-    } catch (err) {
-      console.error('保存剪贴板历史失败：', err)
-    }
+    clipWriteNow()
   }, 400)
 }
 
@@ -311,39 +327,63 @@ function createTray() {
   tray.on('click', () => showIsland())
 }
 
+// 原生菜单被点过具体项 → 说明用户是在"操作岛"，
+// 此时菜单关闭后不该顺手把岛收起来（否则刚打开的面板/弹窗会立刻被收起）
+let menuActionTaken = false
+
+function markMenuActions(template) {
+  return template.map((item) =>
+    typeof item.click === 'function'
+      ? {
+          ...item,
+          click: (...args) => {
+            menuActionTaken = true
+            return item.click(...args)
+          },
+        }
+      : item
+  )
+}
+
 function showMenu() {
   if (!win) return
-  const menu = Menu.buildFromTemplate([
-    {
-      label: '便签',
-      click: () => win.webContents.send('island:switch-app', 'notes'),
-    },
-    {
-      label: '待办',
-      click: () => win.webContents.send('island:switch-app', 'todo'),
-    },
-    {
-      label: '时间',
-      click: () => win.webContents.send('island:switch-app', 'time'),
-    },
-    {
-      label: '常用语',
-      click: () => win.webContents.send('island:switch-app', 'phrases'),
-    },
-    {
-      label: '网速',
-      click: () => win.webContents.send('island:switch-app', 'net'),
-    },
-    {
-      label: '剪贴板',
-      click: () => win.webContents.send('island:switch-app', 'clipboard'),
-    },
-    { type: 'separator' },
-    {
-      label: '吸附顶部',
-      type: 'checkbox',
-      checked: docked,
-      click: () => win.webContents.send('island:menu-dock'),
+  menuActionTaken = false
+  const menu = Menu.buildFromTemplate(
+    markMenuActions([
+      {
+        label: '便签',
+        click: () => win.webContents.send('island:switch-app', 'notes'),
+      },
+      {
+        label: '待办',
+        click: () => win.webContents.send('island:switch-app', 'todo'),
+      },
+      {
+        label: '时间',
+        click: () => win.webContents.send('island:switch-app', 'time'),
+      },
+      {
+        label: '常用语',
+        click: () => win.webContents.send('island:switch-app', 'phrases'),
+      },
+      {
+        label: '网速',
+        click: () => win.webContents.send('island:switch-app', 'net'),
+      },
+      {
+        label: '剪贴板',
+        click: () => win.webContents.send('island:switch-app', 'clipboard'),
+      },
+      {
+        label: '材料箱',
+        click: () => win.webContents.send('island:switch-app', 'material-box'),
+      },
+      { type: 'separator' },
+      {
+        label: '吸附顶部',
+        type: 'checkbox',
+        checked: docked,
+        click: () => win.webContents.send('island:menu-dock'),
     },
     {
       label: '音效',
@@ -354,8 +394,26 @@ function showMenu() {
     { type: 'separator' },
     { label: '隐藏到托盘', click: () => hideIsland() },
     { label: '退出灵动岛', click: () => app.quit() },
-  ])
-  menu.popup({ window: win })
+    ])
+  )
+  menu.popup({ window: win, callback: () => notifyMenuClosed() })
+}
+
+// 原生菜单弹出期间，渲染进程收不到 mousemove，`hovering` 会一直停在 true，
+// 于是菜单关掉之后岛再也不会自动收起。这里在菜单关闭时把光标位置回传，
+// 让渲染进程重新做一次命中检测；keepOpen 表示用户点了具体菜单项（在操作岛），
+// 这种情况不要顺手把岛收起来。
+function notifyMenuClosed() {
+  if (!win || win.isDestroyed()) return
+  const keepOpen = menuActionTaken
+  menuActionTaken = false
+  try {
+    const p = screen.getCursorScreenPoint()
+    const b = win.getBounds()
+    win.webContents.send('island:menu-closed', { x: p.x - b.x, y: p.y - b.y, keepOpen })
+  } catch {
+    win.webContents.send('island:menu-closed', { keepOpen })
+  }
 }
 
 app.whenReady().then(() => {
@@ -369,6 +427,9 @@ app.whenReady().then(() => {
     clipLast = ''
   }
   clipStart()
+
+  // 材料箱：加载 userData/material-box.json，并校验一次文件路径是否还有效
+  mbox.init(win)
 
   // 渲染进程按悬停状态动态切换鼠标穿透
   ipcMain.on('island:clickthrough', (e, ignore) => {
@@ -450,6 +511,30 @@ app.whenReady().then(() => {
     return true
   })
 
+  // ---------- 材料箱 ----------
+  // Renderer 只拿「路径 + 元数据」，所有真实文件操作都在这里完成
+  ipcMain.handle('mbox:get', () => mbox.snapshot())
+  ipcMain.handle('mbox:create-task', (e, name, required) => mbox.createTask(name, required))
+  ipcMain.handle('mbox:remove-task', (e, id) => mbox.removeTask(id))
+  ipcMain.handle('mbox:set-active-task', (e, id) => mbox.setActiveTask(id))
+  ipcMain.handle('mbox:clear-task', (e, id) => mbox.clearTask(id))
+  ipcMain.handle('mbox:add-paths', (e, paths) => mbox.collectPaths(Array.isArray(paths) ? paths : []))
+  ipcMain.handle('mbox:pick-files', () => mbox.pickFiles())
+  ipcMain.handle('mbox:pick-folder', (e, title) => mbox.pickFolder(title))
+  ipcMain.handle('mbox:remove-file', (e, taskId, fileId) => mbox.removeFile(taskId, fileId))
+  ipcMain.handle('mbox:revalidate', () => mbox.revalidate())
+  ipcMain.handle('mbox:relocate', (e, taskId, fileId) => mbox.relocate(taskId, fileId))
+  ipcMain.handle('mbox:reveal', (e, p) => mbox.revealFile(p))
+  ipcMain.handle('mbox:open-path', (e, p) => mbox.revealPath(p))
+  ipcMain.handle('mbox:default-dirs', (e, taskId) => {
+    const snap = mbox.snapshot()
+    return mbox.defaultDirs(snap.tasks.find((t) => t.id === taskId))
+  })
+  ipcMain.handle('mbox:export-zip', (e, payload) => mbox.exportZip(payload || {}))
+  ipcMain.handle('mbox:cancel-zip', () => mbox.cancelZip())
+  ipcMain.handle('mbox:copy-to-folder', (e, payload) => mbox.copyToFolder(payload || {}))
+  ipcMain.on('mbox:menu', (e, taskId) => mbox.popupMenu(taskId))
+
   // 隐藏到托盘（关闭按钮）
   ipcMain.on('island:hide', () => hideIsland())
 
@@ -461,6 +546,21 @@ app.whenReady().then(() => {
 
   ipcMain.on('island:menu', () => showMenu())
   ipcMain.on('island:quit', () => app.quit())
+
+  // 退出前把两处「防抖写盘」的待写数据强制落盘，
+  // 否则最后几百毫秒内的改动会随进程一起丢掉
+  app.on('before-quit', () => {
+    try {
+      mbox.flush()
+    } catch (err) {
+      console.error('材料箱落盘失败：', err)
+    }
+    try {
+      clipFlush()
+    } catch (err) {
+      console.error('剪贴板落盘失败：', err)
+    }
+  })
 
   // 系统托盘：独立 try-catch，创建失败也不影响上面已注册的 IPC（尤其 island:hide）
   try {
