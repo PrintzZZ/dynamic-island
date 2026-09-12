@@ -333,7 +333,7 @@ void now
   color: rgba(255, 255, 255, 0.8);
 }
 .seg-btn.on {
-  background: rgba(255, 159, 10, 0.2);
+  background: #101E34;
   color: #ffb340;
 }
 

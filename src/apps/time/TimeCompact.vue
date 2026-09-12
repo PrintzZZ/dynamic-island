@@ -1,14 +1,19 @@
 <template>
-  <div class="time-compact">
-    <!-- 左：模式图标（计时运行中呼吸） -->
-    <span class="ico-tile" :class="{ beat: running }" :style="{ background: tileBg }">
+  <div class="time-compact" :class="{ simple: isClock }">
+    <!-- 左：模式图标（计时运行中呼吸）；日常时间不显示 -->
+    <span
+      v-if="!isClock"
+      class="ico-tile"
+      :class="{ beat: running }"
+      :style="{ background: tileBg }"
+    >
       <Icon :name="mode.icon" class="ico-svg" :style="{ color: accent }" />
     </span>
 
-    <!-- 中：主值 + 次行 -->
+    <!-- 中：主值 + 次行；日常时间只留居中时间 -->
     <span class="text">
       <span class="line1">{{ line1 }}</span>
-      <span class="line2">{{ line2 }}</span>
+      <span v-if="!isClock" class="line2">{{ line2 }}</span>
     </span>
 
     <!-- 右：环形进度 -->
@@ -36,6 +41,9 @@ const { state } = useTimeApp()
 
 const mode = computed(() => MODES.find((m) => m.id === state.mode) || MODES[0])
 const pad2 = (x) => String(x).padStart(2, '0')
+
+// 日常时间：岛内只保留「居中的时间 + 右侧圆环」，不显示图标与日期
+const isClock = computed(() => state.mode === 'clock')
 
 const d = computed(() => new Date(now.value))
 
@@ -147,6 +155,26 @@ const offset = computed(() => C * (1 - progress.value))
   height: 100%;
   padding: 0 13px;
   color: #f5f5f7;
+}
+
+/* 日常时间：时间在整颗胶囊里真正居中，圆环绝对定位贴右侧 */
+.time-compact.simple {
+  position: relative;
+  justify-content: center;
+}
+.time-compact.simple .text {
+  flex: 0 1 auto;
+  align-items: center;
+}
+.time-compact.simple .line1 {
+  font-size: 15px;
+  letter-spacing: 0.3px;
+}
+.time-compact.simple .ring {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%) rotate(-90deg);
 }
 
 .ico-tile {

@@ -8,5 +8,10 @@ release2
 .DS_Store
 
 # 苹果专有字体（PingFang SC / SF Pro）：授权仅限 Apple 设备，
-# 且实测为极小裁剪子集（466 字形、缺大量界面常用汉字），不可用也不可分发。
+# 提交到公开仓库或打进 exe 分发都属于「再分发」，侵权。
+#
+# /src/assets/fonts/PingFangSC-*.woff2 是完整的六个字重（每个 42199 字形），
+#   本机放好即可正常显示，fonts.css 已接好；缺文件时自动回退 MiSans / 系统字体。
+# /SFProPingFangSC-*.woff2 是早期那个实测只有 466 字形的废子集，已弃用。
+/src/assets/fonts/PingFangSC-*.woff2
 /SFProPingFangSC-*.woff2

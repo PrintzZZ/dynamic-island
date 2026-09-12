@@ -1,12 +1,6 @@
 <template>
   <div class="focus-panel">
-    <!-- ---------- 关联任务（读取现有待办） ---------- -->
-    <button class="task-card" :class="{ empty: !taskTitle }" @click="pickerOpen = !pickerOpen">
-      <Icon name="target" class="task-ico" />
-      <span class="task-title">{{ taskTitle || '不关联任务' }}</span>
-      <Icon :name="pickerOpen ? 'chevron-down' : 'chevron-right'" class="task-chev" />
-    </button>
-
+    
     <Transition name="pick">
       <div v-if="pickerOpen" class="picker">
         <div v-if="pendingTodos.length" class="pick-list">
@@ -25,12 +19,20 @@
         <button class="pick-clear" @click="chooseTask(null)">不关联任务</button>
       </div>
     </Transition>
-
     <!-- ---------- 计时 ---------- -->
-    <RingProgress :progress="progress" :color="phaseColor" :size="128">
+    <RingProgress :progress="progress" :color="phaseColor" :size="180">
       <div class="big">{{ fmtMs(focus.remaining) }}</div>
       <div class="phase" :style="{ color: phaseColor }">{{ phaseText }}</div>
     </RingProgress>
+
+    <!-- ---------- 关联任务（读取现有待办） ---------- -->
+    <button class="task-card" :class="{ empty: !taskTitle }" @click="pickerOpen = !pickerOpen">
+      <Icon name="target" class="task-ico" />
+      <span class="task-title">{{ taskTitle || '不关联任务' }}</span>
+      <Icon :name="pickerOpen ? 'chevron-down' : 'chevron-right'" class="task-chev" />
+    </button>
+
+    
 
     <!-- ---------- 参数 ---------- -->
     <div class="meta-row">
@@ -137,8 +139,8 @@ void focusSetDuration
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  padding: 8px 11px;
+  width: 60%;
+  padding: 12px 14px;
   border: none;
   border-radius: 11px;
   background: rgba(191, 90, 242, 0.12);
@@ -146,6 +148,7 @@ void focusSetDuration
   cursor: pointer;
   flex-shrink: 0;
   transition: background 0.16s ease;
+  margin-bottom: 10px;
 }
 .task-card:hover {
   background: rgba(191, 90, 242, 0.2);
@@ -166,7 +169,7 @@ void focusSetDuration
   flex: 1;
   min-width: 0;
   text-align: left;
-  font-size: 12.5px;
+  font-size: 16px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -185,13 +188,17 @@ void focusSetDuration
 
 /* 待办选择 */
 .picker {
-  width: 100%;
+  width: calc(100% - 26px);
   max-height: 132px;
   overflow-y: auto;
   border-radius: 11px;
-  background: rgba(255, 255, 255, 0.045);
+  background: rgb(44, 41, 41);
   padding: 5px;
   flex-shrink: 0;
+  position: absolute;
+  top: 10%;
+  left: 13px;
+  z-index: 99999;
 }
 .pick-list {
   display: flex;
@@ -272,14 +279,14 @@ void focusSetDuration
 /* 计时 */
 .big {
   font-size: 30px;
-  font-weight: 300;
+  font-weight: 500;
   color: #f5f5f7;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.5px;
 }
 .phase {
-  font-size: 10.5px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 300;
   letter-spacing: 1px;
 }
 
@@ -288,14 +295,15 @@ void focusSetDuration
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
+  padding: 5px 0;
 }
 .meta-row.sub {
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
   margin-top: -3px;
 }
 .meta-row i {
@@ -304,9 +312,9 @@ void focusSetDuration
   background: rgba(255, 255, 255, 0.18);
 }
 .meta-ico {
-  width: 12px;
-  height: 12px;
-  color: rgba(255, 255, 255, 0.32);
+  width: 14px;
+  height: 14px;
+  color: rgba(255, 255, 255, 0.6);
   margin-right: -2px;
 }
 /* 「跳到下一阶段」收进副行右侧，不占主按钮位 */
@@ -339,36 +347,37 @@ void focusSetDuration
 /* 控制 */
 .foot {
   display: flex;
-  gap: 8px;
+  gap: 15px;
   width: 100%;
-  margin-top: auto;
-  flex-shrink: 0;
+  margin-top: 5px;
+  padding: 0 30px;
 }
 .btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 10px;
+  padding: 14px;
   border: none;
-  border-radius: 12px;
+  border-radius: 25px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.16s ease, filter 0.16s ease;
+  transition: background 0.16s ease, transform 0.16s ease;
 }
 .btn-ico {
   width: 14px;
   height: 14px;
 }
 .btn.primary {
-  flex: 1.6;
-  background: #bf5af2;
+  flex: 1;
+  background: #2B3289;
   color: #fff;
 }
 .btn.primary:hover {
-  filter: brightness(1.1);
+  background: #3c43a1;
+  /* filter: brightness(1.1); */
 }
 .btn.ghost {
   flex: 1;

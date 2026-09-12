@@ -5,7 +5,8 @@
 
     <template v-else>
       <!-- ---------- 应用头 ---------- -->
-      <div class="app-head">
+      <!-- ---------- 重复-暂不启用 ---------- -->
+      <!-- <div class="app-head">
         <span class="app-ico" :style="{ background: activeMode.accent }">
           <Icon :name="activeMode.icon" class="app-ico-svg" />
         </span>
@@ -13,7 +14,7 @@
           <span class="app-title">时间</span>
           <span class="app-sub">{{ activeMode.name }}</span>
         </div>
-      </div>
+      </div> -->
 
       <!-- ---------- 岛内显示（同时也是模式切换） ---------- -->
       <div class="seg">
