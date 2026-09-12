@@ -297,7 +297,10 @@ function fireReminder(r, again = false) {
     id: r.id,
     again,
   })
-  if (r.repeatCount !== 'off') {
+  // 只有「第一次响」才初始化催办计数。
+  // 再次提醒时计数由心跳推进（fr.repeats + 1），这里若再重置成 0，
+  // 1次 / 3次 的上限就永远不成立 —— 实际表现是「选了 1 次也会一直响」。
+  if (r.repeatCount !== 'off' && !again) {
     firingReminder.value = { id: r.id, nextAt: Date.now() + r.repeatInterval * 1000, repeats: 0 }
   }
 }
@@ -323,7 +326,11 @@ function checkReminders() {
     r.lastFired = r.type === 'once' ? 'once' : today
     if (r.type === 'once') {
       r.done = true
-      r.enabled = false // 触发后自动完成，不再重复
+      // 这里**不能**无条件停用：一次性提醒如果选了催办策略，还要继续催到
+      // 「知道了」为止。一旦置 enabled = false，下一拍心跳的
+      // `!r.enabled` 就会把催办链掐断 —— 表现就是「只响一次就没了」。
+      // 只有「关闭催办」的才是真的响一次就结束。
+      if (r.repeatCount === 'off') r.enabled = false
     }
     changed = true
     fireReminder(r)
@@ -331,10 +338,19 @@ function checkReminders() {
   if (changed) save()
 }
 
+// 催办链收尾：一次性提醒到这一刻才真正「完成并停用」
+function finishOnceNag(r) {
+  if (r && r.type === 'once' && r.done && r.enabled) {
+    r.enabled = false
+    save()
+  }
+}
+
 function ackReminder(id) {
   const fr = firingReminder.value
   if (!fr) return
   if (id && fr.id !== id) return
+  finishOnceNag(state.reminders.find((x) => x.id === fr.id))
   firingReminder.value = null
 }
 
@@ -430,6 +446,7 @@ setInterval(() => {
     const r = state.reminders.find((x) => x.id === fr.id)
     const maxRepeats = !r || r.repeatCount === 'off' ? 0 : r.repeatCount === 'unlimited' ? Infinity : Number(r.repeatCount) || 0
     if (!r || !r.enabled || maxRepeats === 0 || fr.repeats >= maxRepeats) {
+      finishOnceNag(r)
       firingReminder.value = null
     } else if (t >= fr.nextAt) {
       firingReminder.value = {
@@ -447,7 +464,8 @@ setInterval(() => {
 // ---------- 下一次提醒 ----------
 // 每日提醒按 HH:MM 找今天/明天；一次性提醒按绝对时间找
 export function nextReminder(when = new Date(now.value)) {
-  const list = state.reminders.filter((r) => r.enabled)
+  // 已触发、还在等确认的一次性提醒不该再当「下一提醒」（它的时间已经过去了）
+  const list = state.reminders.filter((r) => r.enabled && !(r.type === 'once' && r.done))
   if (!list.length) return null
   const nowMin = when.getHours() * 60 + when.getMinutes()
   const t = when.getTime()
