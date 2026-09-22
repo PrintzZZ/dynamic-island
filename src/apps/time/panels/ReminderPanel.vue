@@ -168,6 +168,7 @@ import {
   useTimeApp,
 } from '../useTimeApp'
 import { sfx } from '../../../utils/sound'
+import { settings as appSettings } from '../../../composables/useSettings'
 
 const {
   state,
@@ -247,8 +248,11 @@ function openNew() {
   label.value = ''
   timeStr.value = defaultTime()
   dateStr.value = toDateInput(new Date())
-  repeatCount.value = 'unlimited'
-  repeatInterval.value = 30
+  // 催办默认值取设置面板「时间」详情页里的偏好
+  const rc = appSettings.timeRepeatCount
+  repeatCount.value = rc === 'off' || rc === 'unlimited' || Number(rc) > 0 ? rc : 'unlimited'
+  const ri = Number(appSettings.timeRepeatInterval)
+  repeatInterval.value = [30, 60, 300].includes(ri) ? ri : 30
 }
 
 // 相对时间：直接算出绝对时刻，并回填到时间框

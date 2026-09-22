@@ -19,7 +19,7 @@
       <!-- ---------- 岛内显示（同时也是模式切换） ---------- -->
       <div class="seg">
         <button
-          v-for="m in MODES"
+          v-for="m in visibleModes"
           :key="m.id"
           class="seg-btn"
           :class="{ on: state.mode === m.id }"
@@ -30,7 +30,7 @@
           <span class="seg-name">{{ m.name }}</span>
         </button>
       </div>
-
+      
       <!-- ---------- 面板 ---------- -->
       <Transition name="panel" mode="out-in">
         <component
@@ -52,7 +52,7 @@ import CountdownPanel from './panels/CountdownPanel.vue'
 import ReminderPanel from './panels/ReminderPanel.vue'
 import FocusPanel from './panels/FocusPanel.vue'
 import WorkPanel from './panels/WorkPanel.vue'
-import { MODES, useTimeApp } from './useTimeApp'
+import { MODES, useTimeApp, visibleModes } from './useTimeApp'
 
 const { state, setMode } = useTimeApp()
 

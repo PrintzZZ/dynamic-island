@@ -1,5 +1,5 @@
 <template>
-  <div class="island-root" @contextmenu.prevent="showMenu">
+  <div class="island-root" :class="{ 'fx-soft': softFx }" @contextmenu.prevent="showMenu">
     <div
       ref="pillEl"
       class="pill"
@@ -117,6 +117,7 @@ import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import gsap from 'gsap'
 import Icon from './Icon.vue'
 import { useIsland, bindPill, emitNoticeAction } from '../composables/useIsland'
+import { settings } from '../composables/useSettings'
 import { toggleMuted, isMuted, sfx } from '../utils/sound'
 import { useMaterialBox } from '../apps/materialBox/useMaterialBox'
 
@@ -141,6 +142,8 @@ const {
 } = useIsland()
 
 const pillEl = ref(null)
+// 设置「外观 → 视觉效果」：柔和档收掉投影、发丝边框更淡
+const softFx = computed(() => settings.visualEffect === 'soft')
 const headerEl = ref(null)
 const bodyEl = ref(null)
 const tabsEl = ref(null)
@@ -191,7 +194,7 @@ function onMove(e) {
   if (inside) {
     clearTimeout(leaveTimer)
     leaveTimer = null
-    if (!suppressExpand && !enterTimer) {
+    if (settings.hoverExpand && !suppressExpand && !enterTimer) {
       enterTimer = setTimeout(() => {
         enterTimer = null
         expand()
@@ -201,7 +204,8 @@ function onMove(e) {
     clearTimeout(enterTimer)
     enterTimer = null
     suppressExpand = false
-    if (!leaveTimer) {
+    // 关掉「移开自动收起」时，只有悬停展开也关掉才不会卡在展开态
+    if (settings.autoCollapse && !leaveTimer) {
       leaveTimer = setTimeout(() => {
         leaveTimer = null
         collapse()
@@ -415,6 +419,7 @@ function onKey(e) {
     dismissNotice('user')
     return
   }
+  if (!settings.escCollapse) return
   doCollapse()
 }
 
@@ -529,9 +534,16 @@ onBeforeUnmount(() => {
   border-radius: 22px;
   background: var(--island-bg);
   border: 1px solid var(--hairline);
+  border-top:none;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   overflow: hidden;
   will-change: width, height, border-radius, top;
+}
+
+/* 视觉效果 = 柔和：投影收掉、发丝边框更淡、四角略收 */
+.island-root.fx-soft .pill {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.26);
+  border-color: rgba(255, 255, 255, 0.05);
 }
 
 /* 胶囊脉冲：计时开始（绿）/ 结束与提醒（红）时向外扩散一圈光晕。

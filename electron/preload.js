@@ -68,4 +68,27 @@ contextBridge.exposeInMainWorld('api', {
   onSoundToggle: (cb) => ipcRenderer.on('island:menu-sound', () => cb()),
   // 原生右键菜单关闭：回传光标位置（相对窗口），让岛重新判定是否该收起
   onMenuClosed: (cb) => ipcRenderer.on('island:menu-closed', (e, p) => cb(p)),
+  // 设置面板改了剪贴板开关/上限 → 岛的列表要重新拉一次
+  onClipboardChanged: (cb) => ipcRenderer.on('clipboard:changed', () => cb()),
+
+  // ---------- 设置面板 ----------
+  // 这些设置存在主进程的 userData/settings.json：
+  // 启动位置、开机自启这类必须在「渲染进程存在之前」就可用。
+  settingsGet: () => ipcRenderer.invoke('settings:get'),
+  settingsSet: (patch) => ipcRenderer.invoke('settings:set', patch),
+  settingsReset: () => ipcRenderer.invoke('settings:reset'),
+  settingsMeta: () => ipcRenderer.invoke('settings:meta'),
+  settingsDisplays: () => ipcRenderer.invoke('settings:displays'),
+  settingsSystemTheme: () => ipcRenderer.invoke('settings:system-theme'),
+  onSystemTheme: (cb) => ipcRenderer.on('settings:system-theme', (e, dark) => cb(dark)),
+  openSettings: () => ipcRenderer.send('settings:open'),
+  onSettingsChanged: (cb) => ipcRenderer.on('settings:changed', (e, s) => cb(s)),
+
+  // 设置窗口的无边框标题栏按钮
+  winMinimize: () => ipcRenderer.send('settings:minimize'),
+  winToggleMaximize: () => ipcRenderer.send('settings:toggle-maximize'),
+  winClose: () => ipcRenderer.send('settings:close'),
+  // 标题栏拖动：不用 -webkit-app-region（无边框窗口在 Windows 上拖动会频闪）
+  winGetBounds: () => ipcRenderer.invoke('settings:get-bounds'),
+  winMoveTo: (x, y) => ipcRenderer.send('settings:move-to', x, y),
 })

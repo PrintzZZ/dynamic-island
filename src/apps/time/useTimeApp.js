@@ -1,6 +1,7 @@
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { sfx } from '../../utils/sound'
 import { island, onNoticeAction, onNoticeDismiss, showNotice, pulsePill } from '../../composables/useIsland'
+import { notifyAllowed, settings as appSettings, subEnabled, update } from '../../composables/useSettings'
 import { defaultSchedule, durText, hm, normalizeSchedule, workStats } from './worktime'
 
 const STORAGE_KEY = 'island.time.v2' // 继续沿用，靠字段补全做兼容，不丢老数据
@@ -169,6 +170,125 @@ function load() {
 // 模块级单例：展开视图与紧凑视图共享同一份状态
 const state = reactive(load())
 
+// 设置里被单独关掉的模式不出现在模式切换器里。
+// 兜底：全关掉时退回完整列表（否则时间应用会没有任何页可显示）。
+// 和 useIsland 的 apps 一样用 ref + watch 显式重建，不依赖模块级 computed 的失效传播。
+export const visibleModes = ref(MODES.filter((m) => subEnabled(m.id)))
+
+watch(
+  () => JSON.stringify(appSettings.enabledSubs || {}),
+  () => {
+    const on = MODES.filter((m) => subEnabled(m.id))
+    visibleModes.value = on.length ? on : MODES
+    // 正在看的模式被关掉 → 落到第一个还开着的
+    if (!visibleModes.value.some((m) => m.id === state.mode)) {
+      state.mode = visibleModes.value[0].id
+      save()
+    }
+  }
+)
+
+// 这个用户之前有没有留下过时间应用的数据？决定设置与岛内状态谁说了算。
+const hadStoredState = (() => {
+  try {
+    return !!localStorage.getItem(STORAGE_KEY)
+  } catch {
+    return false
+  }
+})()
+
+// ---------- 设置面板「时间」详情页 ↔ 岛内状态 ----------
+// 作息 / 默认模式 / 专注时长这三处两边都能改，规则：
+//   · 老用户（本地已有数据）→ 以岛内为准，hydrate 时把现有值回填进设置；
+//   · 新用户 → 以设置为准，把默认值灌进 state；
+//   · 之后谁改谁生效，值相同就不动，不会来回弹。
+function applyScheduleFromSettings() {
+  const next = normalizeSchedule({
+    ...state.workSchedule,
+    start: appSettings.timeWorkStart,
+    end: appSettings.timeWorkEnd,
+    lunchStart: appSettings.timeLunchStart,
+    lunchEnd: appSettings.timeLunchEnd,
+  })
+  const cur = state.workSchedule
+  if (
+    cur.start === next.start &&
+    cur.end === next.end &&
+    cur.lunchStart === next.lunchStart &&
+    cur.lunchEnd === next.lunchEnd
+  ) {
+    return false
+  }
+  state.workSchedule = next
+  save()
+  return true
+}
+
+function applyModeFromSettings() {
+  if (!MODE_IDS.includes(appSettings.timeDefaultMode)) return
+  if (state.mode === appSettings.timeDefaultMode) return
+  state.mode = appSettings.timeDefaultMode
+  save()
+}
+
+function applyFocusFromSettings() {
+  const fm = Number(appSettings.timeFocusMinutes)
+  if (!(fm >= 5 && fm <= 120)) return
+  if (state.focus.running) return // 正在跑就别动它
+  state.focus.focusMs = fm * 60000
+  if (state.focus.phase === 'focus') state.focus.remaining = state.focus.focusMs
+  save()
+}
+
+// hydrated 之前的变化都是 hydrate 本身写进来的，不当作「用户改动」
+let hydrated = false
+
+watch(
+  () => appSettings.ready,
+  (ready) => {
+    if (!ready || hydrated) return
+    if (hadStoredState) {
+      // 老用户：岛内作息回填到设置，别让默认值把人家改好的作息冲掉
+      update({
+        timeWorkStart: state.workSchedule.start,
+        timeWorkEnd: state.workSchedule.end,
+        timeLunchStart: state.workSchedule.lunchStart,
+        timeLunchEnd: state.workSchedule.lunchEnd,
+      })
+    } else {
+      applyScheduleFromSettings()
+      applyModeFromSettings()
+      applyFocusFromSettings()
+    }
+    hydrated = true
+  },
+  { immediate: true }
+)
+
+watch(
+  () => [
+    appSettings.timeWorkStart,
+    appSettings.timeWorkEnd,
+    appSettings.timeLunchStart,
+    appSettings.timeLunchEnd,
+  ],
+  () => {
+    if (hydrated) applyScheduleFromSettings()
+  }
+)
+watch(
+  () => appSettings.timeDefaultMode,
+  () => {
+    if (hydrated) applyModeFromSettings()
+  }
+)
+watch(
+  () => appSettings.timeFocusMinutes,
+  () => {
+    if (hydrated) applyFocusFromSettings()
+  }
+)
+
 // 共享时钟：只在「秒」变化时推进，避免 4Hz 无谓刷新时间类 UI
 export const now = ref(Date.now())
 
@@ -214,9 +334,19 @@ export function reminderRepeatText(r) {
 }
 
 // ---------- 动效 + 提醒 ----------
+// 提醒 / 计时结束的通知条是否弹，由设置面板的「通知选项」决定。
+// 注意：提示音和胶囊脉冲在上面，不受这里影响 —— 关掉通知条仍然会响。
+const NOTIFY_SOURCE = {
+  countdown: 'timer',
+  focusEnd: 'timer',
+  breakEnd: 'timer',
+  reminder: 'reminder',
+}
+
 function alert(kind, payload = {}) {
   sfx.alarm()
   pulsePill('end')
+  if (!notifyAllowed(NOTIFY_SOURCE[kind] || kind)) return
   if (island.mode !== 'compact' || document.hidden) return
   const table = {
     countdown: {
@@ -230,7 +360,6 @@ function alert(kind, payload = {}) {
         { id: 'again', label: '再来一次', primary: true },
         { id: 'done', label: '完成' },
       ],
-      duration: 11000,
     },
     focusEnd: {
       icon: 'focus',
@@ -257,8 +386,9 @@ function alert(kind, payload = {}) {
     },
   }
   const spec = table[kind] || table.countdown
-  // 已经播过警报音了，通知条不再叠一层提示音
-  showNotice({ silent: true, ...spec }, spec.duration || 7000)
+  // 已经播过警报音了，通知条不再叠一层提示音。
+  // 不传 duration：停留时长统一由设置里的「通知显示时间」决定。
+  showNotice({ silent: true, ...spec })
 }
 
 function announceStart() {
@@ -489,6 +619,8 @@ export function nextReminder(when = new Date(now.value)) {
 export function useTimeApp() {
   function setMode(id) {
     if (!MODE_IDS.includes(id) || state.mode === id) return
+    // 被设置关掉的模式不允许切过去
+    if (!visibleModes.value.some((m) => m.id === id)) return
     state.mode = id
     sfx.switchApp()
     save()
@@ -610,9 +742,17 @@ export function useTimeApp() {
   }
 
   // ----- 作息 -----
+  // 作息同时存在于两处：岛内 WorkPanel 直接改，设置面板的「时间」详情页也改。
+  // 两处都往 settings.json 写一份，再由下面的 watch 同步回来，值不同才动，不会来回弹。
   function setWorkSchedule(patch) {
     state.workSchedule = normalizeSchedule({ ...state.workSchedule, ...patch })
     save()
+    update({
+      timeWorkStart: state.workSchedule.start,
+      timeWorkEnd: state.workSchedule.end,
+      timeLunchStart: state.workSchedule.lunchStart,
+      timeLunchEnd: state.workSchedule.lunchEnd,
+    })
   }
 
   // ----- 提醒 -----

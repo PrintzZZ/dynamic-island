@@ -203,15 +203,21 @@ const numToChinese = (num) => {
 .now-text {
   flex: 1;
   min-width: 0;
+  height: 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
 }
 
 .big-time {
-  font-size: 46px;
-  font-weight: 400;
+  font-size: 60px;
+  font-weight: 500;
   line-height: 1;
   letter-spacing: 1px;
   color: #f5f5f7;
   font-variant-numeric: tabular-nums;
+  font-family: 'SF Pro Display', 'SF Pro Icons', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
 }
 
 .date {
@@ -449,6 +455,7 @@ const numToChinese = (num) => {
   align-items: center;
   gap: 10px;
   padding: 10px 12px 11px;
+      margin-top: 5px;
 }
 
 .bell {

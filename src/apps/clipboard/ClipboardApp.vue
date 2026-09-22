@@ -43,6 +43,7 @@
           <Transition name="pop">
             <span v-if="copiedId === it.id" class="copied-tag">
               <Icon name="check" class="copied-ico" />
+              <span class="copied-text">已复制</span>
             </span>
           </Transition>
 
@@ -81,6 +82,14 @@
         <span class="knob" />
       </button>
     </div>
+
+    <!-- 复制提示：整页右下角浮一条，行内的高亮容易被列表本身淹没 -->
+    <Transition name="toast">
+      <div v-if="toast" class="clip-toast">
+        <Icon name="check" class="clip-toast-ico" />
+        <span>{{ toast }}</span>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -95,6 +104,8 @@ const { items, settings, copy, open, remove, clear } = useClipboard()
 const keyword = ref('')
 const copiedId = ref(null)
 let copiedTimer = null
+const toast = ref(null)
+let toastTimer = null
 
 const filtered = computed(() => {
   const k = keyword.value.trim().toLowerCase()
@@ -115,7 +126,7 @@ function flashCopied(id) {
   if (copiedTimer) clearTimeout(copiedTimer)
   copiedTimer = setTimeout(() => {
     copiedId.value = null
-  }, 1100)
+  }, 1600)
 }
 
 async function copyItem(it) {
@@ -123,11 +134,23 @@ async function copyItem(it) {
   if (!ok) return
   sfx.tick()
   flashCopied(it.id)
+  showToast('已复制到剪贴板')
+}
+
+// 底部提示条：复制成功 / 打开链接 都给一条明确反馈
+function showToast(text) {
+  toast.value = text
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    toast.value = null
+  }, 1600)
 }
 
 async function openItem(it) {
   const ok = await open(it)
-  if (ok) sfx.tick()
+  if (!ok) return
+  sfx.tick()
+  showToast('已在浏览器打开')
 }
 
 function removeItem(id) {
@@ -140,11 +163,13 @@ function clearAll() {
 
 onUnmounted(() => {
   if (copiedTimer) clearTimeout(copiedTimer)
+  if (toastTimer) clearTimeout(toastTimer)
 })
 </script>
 
 <style scoped>
 .clip-app {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -356,18 +381,68 @@ onUnmounted(() => {
   background: var(--red);
   color: #fff;
 }
+/* 行内「已复制」：带文字，比只有一个勾更明确 */
 .copied-tag {
   position: absolute;
   right: 12px;
   bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px 1px 5px;
+  border-radius: 999px;
+  background: rgba(90, 200, 250, 0.18);
   font-size: 10px;
   font-weight: 700;
   color: #5ac8fa;
+  white-space: nowrap;
+}
+.copied-text {
+  font-size: 10px;
 }
 .copied-ico {
   width: 10px;
   height: 10px;
   stroke-width: 3;
+}
+
+/* 底部浮层提示：整页级别的反馈，不会被列表本身淹没 */
+.clip-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 62px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(28, 28, 32, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  color: #f5f5f7;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 20;
+}
+.clip-toast-ico {
+  width: 12px;
+  height: 12px;
+  color: #30d158;
+  stroke-width: 3;
+}
+.toast-enter-active {
+  transition: opacity 0.18s ease, transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.toast-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px) scale(0.94);
 }
 
 /* 空态 */

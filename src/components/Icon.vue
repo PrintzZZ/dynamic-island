@@ -208,6 +208,68 @@
       <path d="M12 19.5v-12" />
       <path d="M6.9 11.1 12 6l5.1 5.1" />
     </template>
+
+    <!-- ---------- 设置面板用 ---------- -->
+    <template v-else-if="name === 'power'">
+      <path d="M12 3.4v8.2" />
+      <path d="M17.6 6.6a7.4 7.4 0 1 1-11.2 0" />
+    </template>
+    <template v-else-if="name === 'palette'">
+      <path d="M12 3.6a8.4 8.4 0 0 0 0 16.8c1.2 0 1.9-.8 1.9-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.1 0-.9.8-1.7 1.7-1.7h1.3a4.5 4.5 0 0 0 4.5-4.5c0-3.6-3.7-6.6-8.4-6.6Z" />
+      <circle cx="8" cy="10.4" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="8" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="10.4" r="1.1" fill="currentColor" stroke="none" />
+    </template>
+    <template v-else-if="name === 'cursor'">
+      <path d="M5.6 3.4 18.4 11l-5.2 1.6L11 18z" />
+    </template>
+    <template v-else-if="name === 'grid'">
+      <rect x="4" y="4" width="6.4" height="6.4" rx="1.8" />
+      <rect x="13.6" y="4" width="6.4" height="6.4" rx="1.8" />
+      <rect x="4" y="13.6" width="6.4" height="6.4" rx="1.8" />
+      <rect x="13.6" y="13.6" width="6.4" height="6.4" rx="1.8" />
+    </template>
+    <template v-else-if="name === 'info'">
+      <circle cx="12" cy="12" r="8.4" />
+      <path d="M12 11v5.2" />
+      <circle cx="12" cy="7.9" r="1" fill="currentColor" stroke="none" />
+    </template>
+    <template v-else-if="name === 'magnet'">
+      <path d="M6 4.6v7.6a6 6 0 0 0 12 0V4.6" />
+      <path d="M6 10.4h4.2M13.8 10.4H18" />
+    </template>
+    <template v-else-if="name === 'volume'">
+      <path d="M11.4 5.2 7 8.6H4.2v6.8H7l4.4 3.4z" />
+      <path d="M15.2 9.4a3.6 3.6 0 0 1 0 5.2" />
+      <path d="M17.6 7a7 7 0 0 1 0 10" />
+    </template>
+    <template v-else-if="name === 'volume-mute'">
+      <path d="M11.4 5.2 7 8.6H4.2v6.8H7l4.4 3.4z" />
+      <path d="M15.4 9.8l4.2 4.4M19.6 9.8l-4.2 4.4" />
+    </template>
+    <template v-else-if="name === 'minus'">
+      <path d="M5.5 12h13" />
+    </template>
+    <template v-else-if="name === 'square'">
+      <rect x="5.4" y="5.4" width="13.2" height="13.2" rx="2.6" />
+    </template>
+    <template v-else-if="name === 'eye'">
+      <path d="M2.6 12S6.4 5.8 12 5.8 21.4 12 21.4 12 17.6 18.2 12 18.2 2.6 12 2.6 12Z" />
+      <circle cx="12" cy="12" r="2.8" />
+    </template>
+    <template v-else-if="name === 'sparkle'">
+      <path d="M12 3.6l1.9 5.1 5.1 1.9-5.1 1.9L12 17.6l-1.9-5.1L5 10.6l5.1-1.9z" />
+      <path d="M18.4 16.4l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" />
+    </template>
+    <template v-else-if="name === 'check-square'">
+      <rect x="4.4" y="4.4" width="15.2" height="15.2" rx="4.2" />
+      <path d="M8.4 12.3l2.5 2.5 4.7-5.3" />
+    </template>
+    <template v-else-if="name === 'window'">
+      <rect x="3.6" y="5" width="16.8" height="14" rx="3" />
+      <path d="M3.6 9.2h16.8" />
+      <circle cx="6.6" cy="7.1" r="0.85" fill="currentColor" stroke="none" />
+    </template>
   </svg>
 </template>
 

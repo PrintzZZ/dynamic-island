@@ -167,8 +167,16 @@ const offset = computed(() => C * (1 - progress.value))
   align-items: center;
 }
 .time-compact.simple .line1 {
-  font-size: 15px;
+  font-size: 16px;
   letter-spacing: 0.3px;
+  /* 不要加 margin-bottom：这颗胶囊是 align-items:center 的纵向居中 flex，
+     底边距会把整行往上顶（4px 底边距 = 上移 2px），
+     看起来就是「吸附态时间偏上、不居中」。 */
+  /* 'SF Pro Display' / 'Helvetica Neue' 只在 macOS 有，Windows 上必须让 Inter 兜住，
+     否则会一路掉到 Arial。实测同一行 18px 数字的墨迹中心偏移：
+     Arial −1.5px、Inter / MiSans / Segoe UI 均为 −0.5px —— Arial 天然偏高，
+     而且和界面其它数字（Inter）不是一套字形。 */
+  font-family: 'SF Pro Display', 'Inter', 'Helvetica Neue', Arial, sans-serif;
 }
 .time-compact.simple .ring {
   position: absolute;
@@ -215,7 +223,7 @@ const offset = computed(() => C * (1 - progress.value))
 }
 .line1 {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 400;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.2px;

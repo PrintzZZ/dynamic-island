@@ -1,27 +1,21 @@
-import { reactive, ref, watch } from 'vue'
+import { reactive, ref } from 'vue'
 import { island, showNotice } from '../../composables/useIsland'
+import { settings as appSettings, notifyAllowed, update as updateSettings } from '../../composables/useSettings'
 
-const STORAGE_KEY = 'island.clipboard.v1'
 const MAX = 60
-const NOTICE_MS = 6000
 
-function loadSettings() {
-  try {
-    const s = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}
-    return { alertOnLink: s.alertOnLink !== false }
-  } catch {
-    return { alertOnLink: true }
-  }
-}
+// 「检测到链接时提醒」现在由设置面板统一管（settings.json 的 clipRemindLink）。
+// 这里用一对存取器包成 reactive，岛内那个小开关和设置面板改的是同一个值。
+const settings = reactive({
+  get alertOnLink() {
+    return appSettings.clipRemindLink !== false
+  },
+  set alertOnLink(v) {
+    updateSettings({ clipRemindLink: !!v })
+  },
+})
 
-// 设置：检测到链接时是否用灵动岛的通知态提醒（模块级单例）
-const settings = reactive(loadSettings())
-
-watch(
-  settings,
-  (val) => localStorage.setItem(STORAGE_KEY, JSON.stringify(val)),
-  { deep: true }
-)
+const notifyLinkEnabled = () => appSettings.clipRemindLink !== false
 
 // 历史记录：真实数据在主进程，这里保存一份镜像供组件渲染
 const items = ref([])
@@ -39,19 +33,24 @@ function onNew(item) {
   latest.value = item
   upsert(item)
   // 复制到链接时，让灵动岛以通知态主动触达；
-  // 展开态 / 窗口隐藏时不打断用户，只安静入库
-  if (item.url && settings.alertOnLink && island.mode === 'compact' && !document.hidden) {
-    showNotice(
-      {
-        accent: '#5AC8FA',
-        icon: 'link',
-        title: '检测到复制了链接',
-        detail: item.url,
-        url: item.url,
-        source: item.id,
-      },
-      NOTICE_MS
-    )
+  // 展开态 / 窗口隐藏时不打断用户，只安静入库。
+  // 两道闸门：剪贴板设置里的「复制链接时提醒」+ 行为·通知里的全局「复制链接时提醒」
+  const allow =
+    item.url &&
+    notifyLinkEnabled() &&
+    notifyAllowed('clipboard') &&
+    island.mode === 'compact' &&
+    !document.hidden
+  if (allow) {
+    // 不传 duration：用设置里的「通知显示时间」
+    showNotice({
+      accent: '#5AC8FA',
+      icon: 'link',
+      title: '检测到复制了链接',
+      detail: item.url,
+      url: item.url,
+      source: 'clipboard',
+    })
   }
 }
 

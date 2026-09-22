@@ -15,6 +15,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { app, dialog, shell, Menu, screen } from 'electron'
 import { createZip } from './zip.js'
+import * as settings from './settings.js'
 
 const MAX_FILES_PER_TASK = 200
 const MAX_NAME_LEN = 120
@@ -402,6 +403,52 @@ function uniquePath(dir, baseName) {
   return candidate
 }
 
+// 按「材料箱设置 → 同名文件」解析最终路径。
+//   rename = 直接自动追加 (1)（默认，静默不打扰）
+//   ask    = 冲突时弹一次询问，可覆盖 / 自动重命名 / 取消
+// 返回 null 表示用户取消。
+function resolveConflict(dir, baseName) {
+  const direct = path.join(dir, baseName)
+  if (!fs.existsSync(direct)) return direct
+  if (settings.load().mboxSameName !== 'ask') return uniquePath(dir, baseName)
+  const r = dialog.showMessageBoxSync(win, {
+    type: 'warning',
+    buttons: ['覆盖', '自动重命名', '取消'],
+    defaultId: 1,
+    cancelId: 2,
+    message: `目标位置已有「${baseName}」`,
+    detail: dir,
+  })
+  if (r === 0) return direct
+  if (r === 1) return uniquePath(dir, baseName)
+  return null
+}
+
+// 按「材料箱设置 → 默认保存位置」挑一个默认目录
+function preferredDir(task) {
+  const first = task?.files.find((f) => !f.missing)
+  const mode = settings.load().mboxSaveDir
+  const pick = (id) => {
+    if (id === 'first') return first ? path.dirname(first.path) : null
+    try {
+      return app.getPath(id === 'desktop' ? 'desktop' : 'downloads')
+    } catch {
+      return null
+    }
+  }
+  const order =
+    mode === 'desktop'
+      ? ['desktop', 'downloads', 'first']
+      : mode === 'downloads'
+        ? ['downloads', 'desktop', 'first']
+        : ['first', 'desktop', 'downloads']
+  for (const id of order) {
+    const d = pick(id)
+    if (d && fs.existsSync(d)) return d
+  }
+  return null
+}
+
 function safeFileName(s) {
   return (
     String(s || '材料')
@@ -427,9 +474,11 @@ async function exportZip({ taskId, name, dir }) {
   const files = t.files.filter((f) => !f.missing)
   if (!files.length) return { ok: false, error: 'NO_FILES' }
 
-  const targetDir = dir && fs.existsSync(dir) ? dir : path.dirname(files[0].path)
+  const targetDir =
+    (dir && fs.existsSync(dir) && dir) || preferredDir(t) || path.dirname(files[0].path)
   const zipName = `${safeFileName(name || t.name)}.zip`
-  const outPath = uniquePath(targetDir, zipName)
+  const outPath = resolveConflict(targetDir, zipName)
+  if (!outPath) return { ok: false, error: 'CANCELLED' }
 
   zipJob = { cancelled: false }
   zipProgress({ phase: 'start', outPath, totalFiles: files.length })
@@ -441,6 +490,14 @@ async function exportZip({ taskId, name, dir }) {
       isCancelled: () => zipJob.cancelled,
     })
     zipProgress({ phase: 'done', outPath: r.outPath, fileCount: r.fileCount, zipBytes: r.zipBytes })
+    // 「打包完成后打开文件夹」
+    if (settings.load().mboxOpenAfterZip) {
+      try {
+        shell.showItemInFolder(r.outPath)
+      } catch {
+        /* 打开失败不影响打包结果 */
+      }
+    }
     return { ok: true, ...r }
   } catch (err) {
     const cancelled = err && err.code === 'CANCELLED'
@@ -468,10 +525,28 @@ async function copyToFolder({ taskId, dir }) {
 
   const copied = []
   const failed = []
+
+  // 同名文件策略：rename 静默追加 (1)；ask 先统计冲突，整批只弹一次
+  const conflicts = files.filter((f) => fs.existsSync(path.join(dir, f.name)))
+  let overwrite = false
+  if (conflicts.length && settings.load().mboxSameName === 'ask') {
+    const r = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      buttons: ['全部覆盖', '自动重命名', '取消'],
+      defaultId: 1,
+      cancelId: 2,
+      message: `目标文件夹已有 ${conflicts.length} 个同名文件`,
+      detail: dir,
+    })
+    if (r === 2) return { ok: false, error: 'CANCELLED' }
+    overwrite = r === 0
+  }
+
   for (const f of files) {
     try {
       // copyFile 由系统搬运，不会把内容读进 Node 内存
-      const dest = uniquePath(dir, f.name)
+      const direct = path.join(dir, f.name)
+      const dest = overwrite && fs.existsSync(direct) ? direct : uniquePath(dir, f.name)
       await fsp.copyFile(f.path, dest)
       copied.push({ name: f.name, dest })
       if (win && !win.isDestroyed()) {

@@ -1,7 +1,8 @@
-import { reactive, computed, watch } from 'vue'
+import { reactive, computed, watch, ref } from 'vue'
 import gsap from 'gsap'
 import { getApps, getApp } from '../apps/registry'
 import { sfx } from '../utils/sound'
+import { settings, update, motionScale, moduleEnabled, subEnabled } from './useSettings'
 
 // 胶囊尺寸（需与 main.css 的 CSS 变量、electron/main.js 的 WIN 保持一致）
 export const SIZES = {
@@ -13,12 +14,10 @@ export const SIZES = {
 // 胶囊距窗口顶部的偏移：浮动 / 吸附贴边
 export const PILL_TOP = { float: 16, docked: 0 }
 
+// 吸附状态现在存在设置里（settings.json），运行时镜像到 island.docked，
+// 这样设置面板、右键菜单、拖动吸附三处共享同一个值。
 function loadDocked() {
-  try {
-    return localStorage.getItem('island.docked') === '1'
-  } catch {
-    return false
-  }
+  return settings.docked === true
 }
 
 export const island = reactive({
@@ -29,13 +28,57 @@ export const island = reactive({
   notice: null, // 临时通知（如"检测到复制了链接"），非空时胶囊进入通知态
 })
 
+// 一级模块 ↔ 应用 id 的归属（和设置面板「应用」页的分组一致）
+export const APP_MODULE = {
+  time: 'time',
+  todo: 'work',
+  notes: 'work',
+  clipboard: 'collect',
+  phrases: 'collect',
+  'material-box': 'collect',
+  net: 'system',
+}
+
+// 设置里停用的模块 / 小功能，其下的应用不再出现在标签栏。
+// 兜底：万一全被关掉，退回完整列表，否则标签栏空了就没法切回来。
+//
+// 这里用 ref + watch 显式重建，而不是 computed：实测模块级的 computed
+// 在设置经 IPC 更新后不会失效（同一个过滤逻辑现场新建 computed 就是对的），
+// 表现是「关掉某个模块后标签栏不变」。显式重建不依赖那套失效传播，确定可靠。
+const TIME_SUB_IDS = ['clock', 'countdown', 'reminder', 'focus']
+
+function filterApps() {
+  const all = getApps()
+  const on = all.filter((a) => {
+    if (!moduleEnabled(APP_MODULE[a.id] || 'system')) return false
+    // time 是一个应用里含四个模式：只要还有模式开着，这个应用就保留
+    if (a.id === 'time') return TIME_SUB_IDS.some((id) => subEnabled(id))
+    return subEnabled(a.id)
+  })
+  return on.length ? on : all
+}
+
+const apps = ref(filterApps())
+
 watch(
-  () => island.docked,
-  (v) => localStorage.setItem('island.docked', v ? '1' : '0')
+  // 用序列化后的字符串当 source：内容变了就重建，且能可靠追踪到每个键
+  () => JSON.stringify([settings.enabledApps || {}, settings.enabledSubs || {}]),
+  () => {
+    apps.value = filterApps()
+  }
 )
 
-const activeApp = computed(() => getApp(island.activeAppId) || getApps()[0])
-const apps = computed(() => getApps())
+const activeApp = computed(() => {
+  const list = apps.value
+  return list.find((a) => a.id === island.activeAppId) || list[0] || getApps()[0]
+})
+
+// 正在用的应用被停用 → 自动切到第一个还启用的
+watch(apps, (list) => {
+  if (list.length && !list.some((a) => a.id === island.activeAppId)) {
+    island.activeAppId = list[0].id
+  }
+})
 
 let pillEl = null
 
@@ -90,6 +133,23 @@ function syncShape() {
   const c = cornerRadius()
   const growing = s.h >= lastH
   lastH = s.h
+
+  // 「动画」设置：完整 / 简洁 / 关闭。
+  // scale 同时缩时长与过冲量；0 表示完全不过渡，直接到位。
+  const k = motionScale()
+  if (k <= 0) {
+    gsap.set(pillEl, {
+      width: s.w,
+      height: s.h,
+      top: currentTop(),
+      borderTopLeftRadius: c.tl,
+      borderTopRightRadius: c.tr,
+      borderBottomLeftRadius: c.bl,
+      borderBottomRightRadius: c.br,
+    })
+    return
+  }
+
   gsap.to(pillEl, {
     width: s.w,
     height: s.h,
@@ -98,8 +158,9 @@ function syncShape() {
     borderTopRightRadius: c.tr,
     borderBottomLeftRadius: c.bl,
     borderBottomRightRadius: c.br,
-    duration: growing ? 0.42 : 0.34,
-    ease: growing ? 'back.out(1.7)' : 'back.out(0.7)',
+    duration: (growing ? 0.42 : 0.34) * k,
+    // 过冲按 scale 收一点：简洁档仍有回弹但更克制
+    ease: growing ? `back.out(${(1.7 * k).toFixed(2)})` : `back.out(${(0.7 * k).toFixed(2)})`,
     overwrite: 'auto',
   })
 }
@@ -130,13 +191,16 @@ function armNotice(ms) {
 // 弹出通知：胶囊形变到通知尺寸并播放提示音，倒计时结束后自动回到原状态
 // payload.silent = true 时不再播提示音（调用方已放过音效）
 // payload.sticky = true 时常驻，只能显式 dismissNotice()（用于接收态 / 打包中）
-export function showNotice(payload, duration = 6000) {
+// duration 不传则用设置里的「通知停留时长」
+export function showNotice(payload, duration) {
   if (!payload) return
+  // 键名是 notifySeconds（和设置里的「通知显示时间」一致），不是 noticeSeconds
+  const ms = duration || (Number(settings.notifySeconds) || 6) * 1000
   island.notice = { ...payload }
   syncShape()
   if (!payload.silent) sfx.notice()
   if (payload.sticky) clearNoticeTimer()
-  else armNotice(duration)
+  else armNotice(ms)
 }
 
 // 就地更新通知内容（改属性不换引用，因此不会重播入场动画、也不会重置倒计时）
@@ -273,11 +337,37 @@ export function setDock(value) {
   if (window.api) window.api.reportDock(next)
   sfx[next ? 'dock' : 'undock']()
   syncShape()
+  // 同步进设置，设置面板里的「吸附顶部」才不会是另一个值
+  update({ docked: next })
 }
 
 export function toggleDock() {
   setDock(!island.docked)
 }
+
+// ---------- 设置 → 岛状态 ----------
+// 设置存在主进程、异步 hydrate；这里把相关项落到运行时状态上。
+// 只在「值真的不同」时写，避免和 setDock 的回写互相打架。
+watch(
+  () => settings.docked,
+  (v) => {
+    if (typeof v !== 'boolean' || v === island.docked) return
+    island.docked = v
+    if (window.api) window.api.reportDock(v)
+    syncShape()
+  }
+)
+
+// 展开时默认打开哪个应用：只在用户还没手动切过应用时应用一次
+let appliedDefaultApp = false
+watch(
+  () => [settings.defaultApp, settings.ready],
+  ([id, ready]) => {
+    if (!ready || appliedDefaultApp) return
+    appliedDefaultApp = true
+    if (typeof id === 'string' && id && getApp(id)) island.activeAppId = id
+  }
+)
 
 export function useIsland() {
   return {

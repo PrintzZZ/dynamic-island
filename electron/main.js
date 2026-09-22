@@ -6,6 +6,7 @@ const {
   Menu,
   Tray,
   nativeImage,
+  nativeTheme,
   clipboard,
   shell,
 } = require('electron')
@@ -15,6 +16,7 @@ const path = require('path')
 // 用 import 而不是 require：入口按 ESM 解析，只有 import 才会被 Rollup 打进产物，
 // require('./xxx') 会被原样保留成运行期调用，打包后就找不到文件了。
 import * as mbox from './materialbox.js'
+import * as settings from './settings.js'
 
 // 允许渲染进程在无用户手势下播放 Web Audio 音效
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
@@ -31,6 +33,7 @@ if (!gotLock) {
 const WIN = { width: 424, height: 560 }
 
 let win = null
+let settingsWin = null
 let tray = null
 let docked = false
 let soundOn = true
@@ -139,8 +142,10 @@ function netStop() {
 // ---------- 剪贴板历史 ----------
 // 轮询 system clipboard，做去重 + 上限的历史队列；识别出 http(s) 链接时
 // 一并把 url 存进条目，渲染进程据此在右侧给出「一键跳转」按钮。
-const CLIP_MAX = 60
 const CLIP_POLL_MS = 700
+// 上限与总开关都来自设置面板，所以做成函数而不是常量
+const clipMax = () => settings.load().clipboardLimit
+const clipOn = () => settings.load().clipboardEnabled
 let clipItems = []
 let clipLast = ''
 let clipTimer = null
@@ -156,7 +161,7 @@ function clipLoad() {
     if (Array.isArray(raw)) {
       clipItems = raw
         .filter((x) => x && typeof x.text === 'string')
-        .slice(0, CLIP_MAX)
+        .slice(0, clipMax())
         .map((x) => ({
           id: String(x.id || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
           text: x.text,
@@ -206,7 +211,11 @@ function clipPush(text) {
   const t = String(text || '').trim()
   if (!t) return
   const dup = clipItems.findIndex((x) => x.text === t)
-  if (dup !== -1) clipItems.splice(dup, 1)
+  // 重复内容：move-top 把它提到最前并刷新时间；ignore 直接丢弃这次复制
+  if (dup !== -1) {
+    if (settings.load().clipDedupe === 'ignore') return
+    clipItems.splice(dup, 1)
+  }
   const item = {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     text: t,
@@ -214,12 +223,13 @@ function clipPush(text) {
     at: Date.now(),
   }
   clipItems.unshift(item)
-  if (clipItems.length > CLIP_MAX) clipItems.length = CLIP_MAX
+  if (clipItems.length > clipMax()) clipItems.length = clipMax()
   clipSave()
   if (win && !win.isDestroyed()) win.webContents.send('clipboard:new', item)
 }
 
 function clipPoll() {
+  if (!clipOn()) return
   let text = ''
   try {
     text = clipboard.readText()
@@ -236,6 +246,22 @@ function clipStart() {
   clipTimer = setInterval(clipPoll, CLIP_POLL_MS)
 }
 
+function clipStop() {
+  if (!clipTimer) return
+  clearInterval(clipTimer)
+  clipTimer = null
+}
+
+// 设置面板改了开关/上限后立即生效
+function clipReconfigure() {
+  if (!clipOn()) return clipStop()
+  clipStart()
+  if (clipItems.length > clipMax()) {
+    clipItems.length = clipMax()
+    clipSave()
+  }
+}
+
 // 取窗口所在显示器的可用区域（支持多显示器拖拽）
 function workAreaFor(target) {
   const d = screen.getDisplayMatching(target.getBounds())
@@ -243,9 +269,21 @@ function workAreaFor(target) {
 }
 
 function createWindow() {
-  const { workArea } = screen.getPrimaryDisplay()
-  const x = workArea.x + Math.round((workArea.width - WIN.width) / 2)
-  const y = workArea.y
+  const s = settings.load()
+
+  // 启动位置：先定用哪块显示器（auto = 主显示器），再按 last / center 落点
+  let target = screen.getPrimaryDisplay()
+  if (typeof s.displayId === 'number') {
+    target = screen.getAllDisplays().find((d) => d.id === s.displayId) || target
+  }
+  const { workArea } = target
+
+  let x = workArea.x + Math.round((workArea.width - WIN.width) / 2)
+  let y = workArea.y
+  if (s.startPosition === 'last' && Number.isFinite(s.lastX) && Number.isFinite(s.lastY)) {
+    x = Math.min(Math.max(s.lastX, workArea.x), workArea.x + workArea.width - WIN.width)
+    y = Math.min(Math.max(s.lastY, workArea.y), workArea.y + workArea.height - WIN.height)
+  }
 
   win = new BrowserWindow({
     width: WIN.width,
@@ -279,7 +317,10 @@ function createWindow() {
     win.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
-  win.once('ready-to-show', () => win.show())
+  // 「启动后显示灵动岛」关掉时，进程起来但先待在托盘里
+  win.once('ready-to-show', () => {
+    if (settings.load().showOnStart) win.show()
+  })
   win.on('show', () => {
     netVisible = true
     if (netWanted) netStart()
@@ -287,6 +328,12 @@ function createWindow() {
   win.on('hide', () => {
     netVisible = false
     netStop()
+  })
+  // 拖动结束后记住落点，供「启动位置 = 上次位置」
+  win.on('moved', () => {
+    if (!win || win.isDestroyed()) return
+    const b = win.getBounds()
+    settings.rememberPosition(b.x, b.y)
   })
   win.on('closed', () => {
     win = null
@@ -310,6 +357,69 @@ function hideIsland() {
   win.hide()
 }
 
+// 展开态 ✕ 的行为由「关闭主面板时」这条设置决定：收进托盘还是直接退出
+function closeIsland() {
+  if (settings.load().closeAction === 'quit') app.quit()
+  else hideIsland()
+}
+
+// ---------- 设置窗口 ----------
+function createSettingsWindow() {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.show()
+    settingsWin.focus()
+    return settingsWin
+  }
+
+  settingsWin = new BrowserWindow({
+    // 高度按右侧功能栏四张卡刚好放得下来定，再矮就要滚动才能看到「恢复默认设置」
+    width: 980,
+    height: 700,
+    minWidth: 900,
+    minHeight: 600,
+    frame: false,
+    // 首帧底色跟着主题走，避免浅色系统下先闪一下深色
+    backgroundColor:
+      settings.load().theme === 'system' && !nativeTheme.shouldUseDarkColors
+        ? '#f4f5f8'
+        : '#0e0f14',
+    show: false,
+    title: '设置',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    settingsWin.loadURL(`${process.env.VITE_DEV_SERVER_URL}/settings.html`)
+  } else {
+    settingsWin.loadFile(path.join(__dirname, '../dist/settings.html'))
+  }
+
+  settingsWin.once('ready-to-show', () => {
+    settingsWin.show()
+    settingsWin.focus()
+  })
+  settingsWin.on('closed', () => {
+    settingsWin = null
+  })
+  return settingsWin
+}
+
+// 设置变更广播。
+// 必须发给「所有」窗口：设置面板和灵动岛是两个渲染进程，
+// 只发给设置窗口的话，岛要等下次重启才看得到改动 —— 表现就是
+// 「开关拨了没反应」。
+function sendSettingsChanged() {
+  const payload = settings.get()
+  for (const w of [settingsWin, win]) {
+    if (w && !w.isDestroyed()) w.webContents.send('settings:changed', payload)
+  }
+}
+
 // 系统托盘：隐藏到托盘后从此恢复
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(__dirname, '../build/icon.png'))
@@ -319,6 +429,7 @@ function createTray() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: '显示灵动岛', click: () => showIsland() },
+      { label: '设置…', click: () => createSettingsWindow() },
       { type: 'separator' },
       { label: '退出灵动岛', click: () => app.quit() },
     ])
@@ -350,34 +461,34 @@ function showMenu() {
   menuActionTaken = false
   const menu = Menu.buildFromTemplate(
     markMenuActions([
-      {
-        label: '便签',
-        click: () => win.webContents.send('island:switch-app', 'notes'),
-      },
-      {
-        label: '待办',
-        click: () => win.webContents.send('island:switch-app', 'todo'),
-      },
-      {
-        label: '时间',
-        click: () => win.webContents.send('island:switch-app', 'time'),
-      },
-      {
-        label: '常用语',
-        click: () => win.webContents.send('island:switch-app', 'phrases'),
-      },
-      {
-        label: '网速',
-        click: () => win.webContents.send('island:switch-app', 'net'),
-      },
-      {
-        label: '剪贴板',
-        click: () => win.webContents.send('island:switch-app', 'clipboard'),
-      },
-      {
-        label: '材料箱',
-        click: () => win.webContents.send('island:switch-app', 'material-box'),
-      },
+      // {
+      //   label: '便签',
+      //   click: () => win.webContents.send('island:switch-app', 'notes'),
+      // },
+      // {
+      //   label: '待办',
+      //   click: () => win.webContents.send('island:switch-app', 'todo'),
+      // },
+      // {
+      //   label: '时间',
+      //   click: () => win.webContents.send('island:switch-app', 'time'),
+      // },
+      // {
+      //   label: '常用语',
+      //   click: () => win.webContents.send('island:switch-app', 'phrases'),
+      // },
+      // {
+      //   label: '网速',
+      //   click: () => win.webContents.send('island:switch-app', 'net'),
+      // },
+      // {
+      //   label: '剪贴板',
+      //   click: () => win.webContents.send('island:switch-app', 'clipboard'),
+      // },
+      // {
+      //   label: '材料箱',
+      //   click: () => win.webContents.send('island:switch-app', 'material-box'),
+      // },
       { type: 'separator' },
       {
         label: '吸附顶部',
@@ -392,6 +503,7 @@ function showMenu() {
       click: () => win.webContents.send('island:menu-sound'),
     },
     { type: 'separator' },
+    { label: '设置…', click: () => createSettingsWindow() },
     { label: '隐藏到托盘', click: () => hideIsland() },
     { label: '退出灵动岛', click: () => app.quit() },
     ])
@@ -417,6 +529,10 @@ function notifyMenuClosed() {
 }
 
 app.whenReady().then(() => {
+  // 读设置并把「开机自启」同步到系统
+  settings.load()
+  settings.apply()
+
   createWindow()
 
   // 剪贴板历史：先读磁盘缓存，再以当前剪贴板为基准监听"新复制"
@@ -426,7 +542,7 @@ app.whenReady().then(() => {
   } catch {
     clipLast = ''
   }
-  clipStart()
+  clipReconfigure()
 
   // 材料箱：加载 userData/material-box.json，并校验一次文件路径是否还有效
   mbox.init(win)
@@ -535,8 +651,8 @@ app.whenReady().then(() => {
   ipcMain.handle('mbox:copy-to-folder', (e, payload) => mbox.copyToFolder(payload || {}))
   ipcMain.on('mbox:menu', (e, taskId) => mbox.popupMenu(taskId))
 
-  // 隐藏到托盘（关闭按钮）
-  ipcMain.on('island:hide', () => hideIsland())
+  // 隐藏到托盘 / 退出（关闭按钮），行为由设置里的「关闭主面板时」决定
+  ipcMain.on('island:hide', () => closeIsland())
 
   // 快捷复制：走 Electron 剪贴板，规避渲染进程焦点/权限限制
   ipcMain.handle('island:copy-text', (e, text) => {
@@ -546,6 +662,73 @@ app.whenReady().then(() => {
 
   ipcMain.on('island:menu', () => showMenu())
   ipcMain.on('island:quit', () => app.quit())
+
+  // ---------- 设置窗口 IPC ----------
+  ipcMain.handle('settings:get', () => settings.get())
+  ipcMain.handle('settings:set', (e, patch) => {
+    const next = settings.set(patch || {})
+    // 上限变小要立刻裁掉多余历史；开关切换要立刻起停轮询
+    if ('clipboardLimit' in (patch || {}) || 'clipboardEnabled' in (patch || {})) {
+      clipReconfigure()
+      if (win && !win.isDestroyed()) win.webContents.send('clipboard:changed')
+    }
+    sendSettingsChanged()
+    return next
+  })
+  ipcMain.handle('settings:reset', () => {
+    const next = settings.reset()
+    clipReconfigure()
+    sendSettingsChanged()
+    return next
+  })
+  ipcMain.on('settings:open', () => createSettingsWindow())
+  ipcMain.on('settings:close', () => {
+    if (settingsWin && !settingsWin.isDestroyed()) settingsWin.close()
+  })
+  ipcMain.on('settings:minimize', () => {
+    if (settingsWin && !settingsWin.isDestroyed()) settingsWin.minimize()
+  })
+  ipcMain.on('settings:toggle-maximize', () => {
+    if (!settingsWin || settingsWin.isDestroyed()) return
+    if (settingsWin.isMaximized()) settingsWin.unmaximize()
+    else settingsWin.maximize()
+  })
+  // 设置窗口问一次版本号，About 页用
+  ipcMain.handle('settings:meta', () => ({
+    version: app.getVersion(),
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    node: process.versions.node,
+    platform: process.platform,
+  }))
+
+  // 设置窗口拖动：和灵动岛一样走「渲染进程算位移 → 主进程 setPosition」，
+  // 不用 -webkit-app-region: drag —— 无边框窗口在 Windows 上靠后者拖动会频闪。
+  ipcMain.handle('settings:get-bounds', () => {
+    if (!settingsWin || settingsWin.isDestroyed()) return null
+    const b = settingsWin.getBounds()
+    return { x: b.x, y: b.y, maximized: settingsWin.isMaximized() }
+  })
+  ipcMain.on('settings:move-to', (e, x, y) => {
+    if (!settingsWin || settingsWin.isDestroyed() || settingsWin.isMaximized()) return
+    settingsWin.setPosition(Math.round(x), Math.round(y))
+  })
+  // 显示器列表：设置面板里的「当前显示器」
+  ipcMain.handle('settings:displays', () => {
+    const primary = screen.getPrimaryDisplay().id
+    return screen.getAllDisplays().map((d, i) => ({
+      id: d.id,
+      label: d.id === primary ? `主显示器（${d.size.width}×${d.size.height}）` : `显示器 ${i + 1}（${d.size.width}×${d.size.height}）`,
+      primary: d.id === primary,
+    }))
+  })
+  // 「外观 → 主题 = 跟随系统」要跟着 Windows 的浅色/深色走
+  ipcMain.handle('settings:system-theme', () => nativeTheme.shouldUseDarkColors)
+  nativeTheme.on('updated', () => {
+    for (const w of [settingsWin, win]) {
+      if (w && !w.isDestroyed()) w.webContents.send('settings:system-theme', nativeTheme.shouldUseDarkColors)
+    }
+  })
 
   // 退出前把两处「防抖写盘」的待写数据强制落盘，
   // 否则最后几百毫秒内的改动会随进程一起丢掉
