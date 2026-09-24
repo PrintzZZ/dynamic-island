@@ -1,6 +1,6 @@
 {
   "name": "dynamic-island",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Windows 平台灵动岛 —— Electron + Vue，支持岛内应用扩展",
   "main": "dist-electron/main.js",
   "author": "UsePro",
