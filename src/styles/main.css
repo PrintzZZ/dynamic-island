@@ -3,8 +3,11 @@
 
 /* 全局变量：需与 useIsland.js 的 SIZES、electron/main.js 的 WIN 保持一致 */
 :root {
-  --island-compact-w: 176px;
-  --island-compact-h: 44px;
+  --island-compact-w: 150px;
+  --island-compact-h: 40px;
+  /* 歌词态：在放歌时接管紧凑态（见 useIsland 的 SIZES.lyric） */
+  --island-lyric-w: 266px;
+  --island-lyric-h: 40px;
   --island-expanded-w: 384px;
   --island-expanded-h: 480px;
 

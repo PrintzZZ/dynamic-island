@@ -14,6 +14,18 @@
     </Row>
   </Card>
 
+  <Card title="交互提示" icon="cursor">
+    <Row label="不再提示卡片可以滑动" :desc="hintDesc">
+      <Toggle
+        :model-value="s.cardHintOff === true"
+        @update:model-value="set({ cardHintOff: $event })"
+      />
+    </Row>
+    <Row label="恢复提示" desc="把滑动次数清零，下次展开灵动岛时重新提示一遍">
+      <button class="st-btn ghost" :disabled="hintFresh" @click="resetHint">恢复提示</button>
+    </Row>
+  </Card>
+
   <Card title="通知" icon="bell">
     <Row label="通知显示时间" desc="通知条自动消失前停留的时间">
       <Select
@@ -91,6 +103,7 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import Card from '../components/Card.vue'
 import Row from '../components/Row.vue'
 import Toggle from '../components/Toggle.vue'
@@ -98,10 +111,25 @@ import Select from '../components/Select.vue'
 import Check from '../components/Check.vue'
 import Slider from '../components/Slider.vue'
 import Icon from '../../components/Icon.vue'
-import { settings, update } from '../../composables/useSettings'
+import { settings, update, CARD_HINT_LIMIT } from '../../composables/useSettings'
 
 const s = settings
 const set = (patch) => update(patch)
 
 const noticeOptions = [5, 6, 7, 10].map((n) => ({ value: n, label: `${n} 秒` }))
+
+// ---------- 卡片滑动提示 ----------
+const hintSwipes = computed(() => Number(s.cardHintSwipes) || 0)
+// 已经处于「新鲜」状态（没关掉也没滑过）时，恢复按钮没有意义
+const hintFresh = computed(() => s.cardHintOff !== true && hintSwipes.value === 0)
+const hintDesc = computed(() => {
+  if (s.cardHintOff === true) return '已设为不再提示。打开上面的开关即可恢复。'
+  if (hintSwipes.value >= CARD_HINT_LIMIT) {
+    return `已经滑动 ${hintSwipes.value} 次，提示已自动关闭。`
+  }
+  return `展开时会提示卡片可以左右滑动；自己滑动满 ${CARD_HINT_LIMIT} 次后自动关闭（已滑动 ${hintSwipes.value} 次）。`
+})
+function resetHint() {
+  set({ cardHintOff: false, cardHintSwipes: 0 })
+}
 </script>

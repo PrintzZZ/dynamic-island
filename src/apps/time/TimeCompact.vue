@@ -35,9 +35,9 @@
 <script setup>
 import { computed } from 'vue'
 import Icon from '../../components/Icon.vue'
-import { MODES, fmtMs, nextReminder, now, reminderWhenText, toMinutes, useTimeApp } from './useTimeApp'
+import { MODES, fmtMs, nextReminder, now, reminderWhenText, toMinutes, useTime } from './useTime'
 
-const { state } = useTimeApp()
+const { state } = useTime()
 
 const mode = computed(() => MODES.find((m) => m.id === state.mode) || MODES[0])
 const pad2 = (x) => String(x).padStart(2, '0')
@@ -80,7 +80,7 @@ const line2 = computed(() => {
     case 'focus': {
       const f = state.focus
       const phase = f.running ? (f.phase === 'focus' ? '专注中' : '休息中') : '已暂停'
-      return f.taskTitle ? `${phase} · ${f.taskTitle}` : phase
+      return phase
     }
     default:
       return ''

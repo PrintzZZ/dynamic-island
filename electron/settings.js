@@ -17,30 +17,33 @@ export const CLIP_DEDUPE = ['move-top', 'ignore']
 export const MBOX_SAVE_DIRS = ['auto', 'desktop', 'downloads']
 export const MBOX_SAME_NAME = ['rename', 'ask']
 export const TIME_MODES = ['clock', 'countdown', 'reminder', 'focus']
+export const MUSIC_PLAYERS = ['auto', 'netease', 'qqmusic', 'kugou', 'spotify', 'browser']
 export const REPEAT_COUNTS = ['off', 1, 3, 'unlimited']
 export const REPEAT_INTERVALS = [30, 60, 300]
 
 // 可整体启停的一级模块（对应「应用」页的分组）
 export const APP_MODULES = {
   time: true, // 时间（日常时间 / 倒计时 / 提醒 / 专注）
-  work: true, // 工作（待办 / 便签）
-  collect: true, // 收集（剪贴板 / 常用语 / 材料箱）
+  efficiency: true, // 效率（便签 / 待办 / 常用语 / 剪贴板）
+  music: true, // 音乐（跟随系统媒体会话，紧凑态显示歌词）
+  collect: true, // 收集（材料箱）
   system: true, // 系统（网速）
 }
 
-// 可以单独启停的「小功能」。work / collect / system 下的条目就是岛内应用本身；
-// time 下的四个条目是时间应用内部的四个模式。
+// 可以单独启停的「小功能」。
+// 多模式应用（time / efficiency）下就是应用内部的模式，其余就是岛内应用本身。
 export const SUB_ITEM_IDS = [
   'clock',
   'countdown',
   'reminder',
   'focus',
-  'todo',
   'notes',
-  'clipboard',
+  'todo',
   'phrases',
+  'clipboard',
   'material-box',
   'net',
+  'music',
 ]
 
 export const DEFAULTS = {
@@ -66,6 +69,12 @@ export const DEFAULTS = {
   notifyLink: true, // 复制链接时提醒
   notifyTimer: true, // 计时结束时提醒
   notifyReminder: true, // 提醒到点时提醒
+
+  // ---------- 卡片滑动提示 ----------
+  // 灵动岛的卡片堆栈可以左右拖；展开时给一次"旁边还有卡"的提示。
+  //   关掉条件 = 用户明确不再提示，或者自己滑动满 CARD_HINT_LIMIT 次
+  cardHintOff: false,
+  cardHintSwipes: 0,
 
   // ---------- 音效 ----------
   // null = 还没初始化过，首次启动用旧的 island.sound 值播种
@@ -95,6 +104,13 @@ export const DEFAULTS = {
   timeRepeatCount: 'unlimited',
   timeRepeatInterval: 30,
   timeFocusMinutes: 25,
+
+  // 音乐
+  musicPlayer: 'auto', // auto | netease | qqmusic | kugou | spotify | browser
+  musicLyricPill: true, // 紧凑态胶囊是否接管显示歌词
+  musicLyricOnline: true, // 允许在线找歌词（会把歌名与歌手发到公开歌词库）
+  musicLyricNetease: true, // 网易云歌词源（非官方接口，可单独关）
+  musicLyricQQ: true, // QQ音乐歌词源（非官方接口，可单独关）
 
   // 材料箱
   mboxOpenAfterZip: true,
@@ -149,6 +165,9 @@ function sanitize(raw) {
   s.sfxStart = bool(s.sfxStart, DEFAULTS.sfxStart)
   s.sfxDone = bool(s.sfxDone, DEFAULTS.sfxDone)
   s.sfxRemind = bool(s.sfxRemind, DEFAULTS.sfxRemind)
+  // 卡片滑动提示
+  s.cardHintOff = bool(s.cardHintOff, DEFAULTS.cardHintOff)
+  s.cardHintSwipes = clamp(Number(s.cardHintSwipes) || 0, 0, 9999, DEFAULTS.cardHintSwipes)
   // 应用
   const ea = s.enabledApps && typeof s.enabledApps === 'object' ? s.enabledApps : {}
   s.enabledApps = Object.fromEntries(
@@ -172,6 +191,12 @@ function sanitize(raw) {
     : DEFAULTS.timeRepeatCount
   s.timeRepeatInterval = oneOf(Number(s.timeRepeatInterval), REPEAT_INTERVALS, DEFAULTS.timeRepeatInterval)
   s.timeFocusMinutes = clamp(s.timeFocusMinutes, 5, 120, DEFAULTS.timeFocusMinutes)
+  // 音乐
+  s.musicPlayer = oneOf(s.musicPlayer, MUSIC_PLAYERS, DEFAULTS.musicPlayer)
+  s.musicLyricPill = bool(s.musicLyricPill, DEFAULTS.musicLyricPill)
+  s.musicLyricOnline = bool(s.musicLyricOnline, DEFAULTS.musicLyricOnline)
+  s.musicLyricNetease = bool(s.musicLyricNetease, DEFAULTS.musicLyricNetease)
+  s.musicLyricQQ = bool(s.musicLyricQQ, DEFAULTS.musicLyricQQ)
   // 材料箱
   s.mboxOpenAfterZip = bool(s.mboxOpenAfterZip, DEFAULTS.mboxOpenAfterZip)
   s.mboxSaveDir = oneOf(s.mboxSaveDir, MBOX_SAVE_DIRS, DEFAULTS.mboxSaveDir)

@@ -71,6 +71,15 @@ contextBridge.exposeInMainWorld('api', {
   // 设置面板改了剪贴板开关/上限 → 岛的列表要重新拉一次
   onClipboardChanged: (cb) => ipcRenderer.on('clipboard:changed', () => cb()),
 
+  // ---------- 音乐（系统媒体会话） ----------
+  musicGet: () => ipcRenderer.invoke('music:get'),
+  musicCommand: (cmd) => ipcRenderer.send('music:command', cmd),
+  // 手动对轴：点某句歌词 = "从现在起按这句同步"
+  musicRealign: (ms) => ipcRenderer.send('music:realign', ms),
+  musicLyricsDir: () => ipcRenderer.invoke('music:lyrics-dir'),
+  musicOpenLyricsDir: () => ipcRenderer.invoke('music:open-lyrics-dir'),
+  onMusicChanged: (cb) => ipcRenderer.on('music:changed', (e, s) => cb(s)),
+
   // ---------- 设置面板 ----------
   // 这些设置存在主进程的 userData/settings.json：
   // 启动位置、开机自启这类必须在「渲染进程存在之前」就可用。

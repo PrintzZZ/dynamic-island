@@ -19,6 +19,7 @@ import Icon from '../../components/Icon.vue'
 import ClipboardDetail from './apps/ClipboardDetail.vue'
 import TimeDetail from './apps/TimeDetail.vue'
 import MaterialBoxDetail from './apps/MaterialBoxDetail.vue'
+import MusicDetail from './apps/MusicDetail.vue'
 
 const props = defineProps({
   which: { type: String, required: true },
@@ -40,6 +41,11 @@ const DETAILS = {
     name: '材料箱设置',
     desc: '打包行为、保存位置与同名处理',
     comp: MaterialBoxDetail,
+  },
+  music: {
+    name: '音乐设置',
+    desc: '跟随的播放器、歌词来源与胶囊显示',
+    comp: MusicDetail,
   },
 }
 

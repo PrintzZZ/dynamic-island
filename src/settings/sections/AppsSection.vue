@@ -51,7 +51,8 @@
     </div>
 
     <div class="st-card-foot" style="padding: 0 2px">
-      关掉的小功能不会出现在灵动岛里；「时间」四个模式关掉几个，模式切换器里就少几个。
+      关掉的小功能不会出现在灵动岛里；「时间」「效率」下面的模式关掉几个，
+      卡片堆栈里就少几张。
     </div>
   </template>
 </template>
@@ -108,6 +109,7 @@ const DETAIL_TITLES = {
   clipboard: '剪贴板设置',
   time: '时间设置',
   materialbox: '材料箱设置',
+  music: '音乐设置',
 }
 const emit = defineEmits(['detail'])
 watch(sub, (v) => emit('detail', DETAIL_TITLES[v] || ''), { immediate: true })

@@ -28,6 +28,9 @@ export const DEFAULTS = {
   notifyLink: true,
   notifyTimer: true,
   notifyReminder: true,
+  // 卡片滑动提示（灵动岛的卡片堆栈右侧还有卡时的引导提示）
+  cardHintOff: false,
+  cardHintSwipes: 0,
   // 音效
   soundEnabled: null,
   volume: 70,
@@ -36,7 +39,7 @@ export const DEFAULTS = {
   sfxDone: true,
   sfxRemind: true,
   // 应用
-  enabledApps: { time: true, work: true, collect: true, system: true },
+  enabledApps: { time: true, efficiency: true, music: true, collect: true, system: true },
   enabledSubs: {
     clock: true,
     countdown: true,
@@ -62,6 +65,12 @@ export const DEFAULTS = {
   timeRepeatCount: 'unlimited',
   timeRepeatInterval: 30,
   timeFocusMinutes: 25,
+  // 音乐
+  musicPlayer: 'auto',
+  musicLyricPill: true,
+  musicLyricOnline: true,
+  musicLyricNetease: true,
+  musicLyricQQ: true,
   // 材料箱
   mboxOpenAfterZip: true,
   mboxSaveDir: 'auto',
@@ -77,8 +86,17 @@ export const PREF_KEYS = Object.keys(DEFAULTS).filter(
   (k) => !['seeded', 'lastX', 'lastY'].includes(k)
 )
 
+// 判断「是不是全默认」时要额外忽略的键。
+// cardHintSwipes 是使用计数而不是用户偏好：用户正常滑几下卡片不该把
+// 「恢复默认设置」点亮。但它仍留在 PREF_KEYS 里 —— 真的恢复默认时应该一起清零。
+const USAGE_KEYS = ['cardHintSwipes']
+
 // systemDark 不进 DEFAULTS：它来自主进程的 nativeTheme，不是用户设置
 const state = reactive({ ...DEFAULTS, ready: false, systemDark: true })
+
+// 卡片滑动提示：用户自己滑动满这个次数就不再提示。
+// 岛内提示（CardCarousel）和设置面板的说明都用它，避免两边各写一份。
+export const CARD_HINT_LIMIT = 3
 
 const hasApi = () => typeof window !== 'undefined' && window.api && window.api.settingsGet
 
@@ -221,7 +239,7 @@ export function moduleEnabled(id) {
   return state.enabledApps?.[id] !== false
 }
 
-// 单个「小功能」是否启用（work/collect/system 下就是应用本身，time 下是四个模式）
+// 单个「小功能」是否启用（多模式应用下就是应用内部的模式，其余就是应用本身）
 export function subEnabled(id) {
   return state.enabledSubs?.[id] !== false
 }
@@ -232,12 +250,13 @@ export const SUB_ITEMS = {
   countdown: { module: 'time', name: '倒计时' },
   reminder: { module: 'time', name: '提醒' },
   focus: { module: 'time', name: '专注' },
-  todo: { module: 'work', name: '待办' },
-  notes: { module: 'work', name: '便签' },
-  clipboard: { module: 'collect', name: '剪贴板' },
-  phrases: { module: 'collect', name: '常用语' },
+  notes: { module: 'efficiency', name: '便签' },
+  todo: { module: 'efficiency', name: '待办' },
+  phrases: { module: 'efficiency', name: '常用语' },
+  clipboard: { module: 'efficiency', name: '剪贴板' },
   'material-box': { module: 'collect', name: '材料箱' },
   net: { module: 'system', name: '网速' },
+  music: { module: 'music', name: '音乐' },
 }
 
 // 某个模块下还有几个条目是启用的（用来判断整个模块是不是「空」了）
@@ -247,7 +266,9 @@ export function enabledSubCount(moduleId) {
 
 // 是否全部都是默认值（用于「恢复默认设置」置灰）
 export function isAllDefault() {
-  return PREF_KEYS.every((k) => JSON.stringify(state[k]) === JSON.stringify(DEFAULTS[k]))
+  return PREF_KEYS.filter((k) => !USAGE_KEYS.includes(k)).every(
+    (k) => JSON.stringify(state[k]) === JSON.stringify(DEFAULTS[k])
+  )
 }
 
 // 当前显示器列表（多显示器时给设置面板用）

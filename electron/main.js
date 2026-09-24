@@ -17,6 +17,7 @@ const path = require('path')
 // require('./xxx') 会被原样保留成运行期调用，打包后就找不到文件了。
 import * as mbox from './materialbox.js'
 import * as settings from './settings.js'
+import * as music from './music/index.js'
 
 // 允许渲染进程在无用户手势下播放 Web Audio 音效
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
@@ -27,7 +28,9 @@ if (!gotLock) {
   app.quit()
 }
 
-// 固定窗口尺寸：比展开态胶囊略大，用于容纳投影与点击穿透。
+// 固定窗口尺寸：比最宽的展开态胶囊略大，用于容纳投影与点击穿透。
+// 宽度 = 384（展开态默认宽）+ 40 的投影余量。若某个应用在注册表里声明了更大的
+// expandedW（见 src/apps/time/index.js），这里的宽度要跟着加，否则胶囊会被裁掉。
 // 高度额外留了余量：形变用 back.out 缓动，展开途中胶囊高度会"过冲"到 ~524px，
 // 窗口不够高的话，弹起来的一瞬间会被下边缘裁掉。形变全部在渲染进程内用 GSAP 完成。
 const WIN = { width: 424, height: 560 }
@@ -418,6 +421,12 @@ function sendSettingsChanged() {
   for (const w of [settingsWin, win]) {
     if (w && !w.isDestroyed()) w.webContents.send('settings:changed', payload)
   }
+  // 音乐模块要跟着设置走：开关模块、换跟随的播放器、改歌词源
+  try {
+    music.refreshMusicSettings()
+  } catch (err) {
+    console.error('音乐模块刷新失败：', err)
+  }
 }
 
 // 系统托盘：隐藏到托盘后从此恢复
@@ -546,6 +555,11 @@ app.whenReady().then(() => {
 
   // 材料箱：加载 userData/material-box.json，并校验一次文件路径是否还有效
   mbox.init(win)
+
+  // 音乐：常驻 SMTC helper，把"在放什么"推给渲染进程
+  music.attachMusicWindow(win)
+  music.registerMusicIpc()
+  music.initMusic()
 
   // 渲染进程按悬停状态动态切换鼠标穿透
   ipcMain.on('island:clickthrough', (e, ignore) => {
@@ -733,6 +747,11 @@ app.whenReady().then(() => {
   // 退出前把两处「防抖写盘」的待写数据强制落盘，
   // 否则最后几百毫秒内的改动会随进程一起丢掉
   app.on('before-quit', () => {
+    try {
+      music.disposeMusic()
+    } catch (err) {
+      console.error('停止音乐 helper 失败：', err)
+    }
     try {
       mbox.flush()
     } catch (err) {

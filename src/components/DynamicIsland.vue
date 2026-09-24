@@ -1,5 +1,10 @@
 <template>
-  <div class="island-root" :class="{ 'fx-soft': softFx }" @contextmenu.prevent="showMenu">
+  <div
+    class="island-root"
+    :class="{ 'fx-soft': softFx }"
+    :style="{ '--island-expanded-w': expandedWidth + 'px', '--island-expanded-h': expandedHeight + 'px' }"
+    @contextmenu.prevent="showMenu"
+  >
     <div
       ref="pillEl"
       class="pill"
@@ -55,6 +60,17 @@
               <Icon name="check" class="notice-act-ico" />
             </button>
           </div>
+        </div>
+
+        <!-- 歌词态：在放歌时接管紧凑态（优先级低于通知、高于普通紧凑态）。 -->
+        <div
+          v-else-if="island.mode !== 'expanded' && island.media"
+          key="lyric"
+          class="lyric-slot"
+          title="点击打开音乐"
+          @click.stop="onLyricClick"
+        >
+          <LyricPill />
         </div>
 
         <!-- 紧凑态 -->
@@ -116,7 +132,9 @@
 import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import gsap from 'gsap'
 import Icon from './Icon.vue'
-import { useIsland, bindPill, emitNoticeAction } from '../composables/useIsland'
+import { useIsland, bindPill, emitNoticeAction, expandedWidth, expandedHeight } from '../composables/useIsland'
+import LyricPill from './LyricPill.vue'
+import { initMusicState } from '../apps/music/useMusic'
 import { settings } from '../composables/useSettings'
 import { toggleMuted, isMuted, sfx } from '../utils/sound'
 import { useMaterialBox } from '../apps/materialBox/useMaterialBox'
@@ -144,6 +162,12 @@ const {
 const pillEl = ref(null)
 // 设置「外观 → 视觉效果」：柔和档收掉投影、发丝边框更淡
 const softFx = computed(() => settings.visualEffect === 'soft')
+
+// 点歌词条 = 切到音乐应用并展开。没有音乐应用（被关掉）时就只展开当前应用。
+function onLyricClick() {
+  if (apps.value.some((a) => a.id === 'music')) switchApp('music')
+  else expand()
+}
 const headerEl = ref(null)
 const bodyEl = ref(null)
 const tabsEl = ref(null)
@@ -462,6 +486,8 @@ async function onDrop(e) {
 }
 
 onMounted(async () => {
+  // 音乐状态要在岛一挂载就订阅，否则歌词条永远不会出现
+  initMusicState()
   bindPill(pillEl.value)
   window.addEventListener('mousemove', onMove)
   window.addEventListener('click', onClick)
@@ -573,6 +599,7 @@ onBeforeUnmount(() => {
 
 /* 固定尺寸槽位：居中裁剪，形变过程中内容不回流 */
 .compact-slot,
+.lyric-slot,
 .expanded-slot {
   position: absolute;
   top: 0;
@@ -582,6 +609,14 @@ onBeforeUnmount(() => {
 .compact-slot {
   width: var(--island-compact-w);
   height: var(--island-compact-h);
+}
+/* 歌词态：比紧凑态长得多，够放一整句歌词 + 下一句 */
+.lyric-slot {
+  width: var(--island-lyric-w);
+  height: var(--island-lyric-h);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
 }
 .expanded-slot {
   width: var(--island-expanded-w);

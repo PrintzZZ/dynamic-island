@@ -889,6 +889,21 @@ button {
 .st-btn.danger:hover {
   background: rgba(255, 69, 58, 0.24);
 }
+/* 禁用态：保持各变体的配色，只压暗，避免 hover 还在变色 */
+.st-btn:disabled,
+.st-btn:disabled:hover {
+  opacity: 0.4;
+  cursor: default;
+}
+.st-btn.ghost:disabled:hover {
+  background: var(--st-ghost);
+}
+.st-btn.primary:disabled:hover {
+  background: var(--st-blue);
+}
+.st-btn.danger:disabled:hover {
+  background: rgba(255, 69, 58, 0.15);
+}
 
 /* ---------- 确认弹窗 ---------- */
 .st-dlg-mask {

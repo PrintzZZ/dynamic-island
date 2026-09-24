@@ -6,9 +6,11 @@ import { settings, update, motionScale, moduleEnabled, subEnabled } from './useS
 
 // 胶囊尺寸（需与 main.css 的 CSS 变量、electron/main.js 的 WIN 保持一致）
 export const SIZES = {
-  compact: { w: 176, h: 44, r: 22 },
+  compact: { w: 150, h: 40, r: 22 },
   expanded: { w: 384, h: 480, r: 34 },
   notice: { w: 360, h: 66, r: 24 }, // 通知态：临时接管胶囊，用来"触达"用户
+  // 歌词态：在放歌时接管胶囊。比紧凑态长得多，够放一整句歌词 + 下一句
+  lyric: { w: 266, h: 40, r: 22 },
 }
 
 // 胶囊距窗口顶部的偏移：浮动 / 吸附贴边
@@ -26,17 +28,25 @@ export const island = reactive({
   pinned: false, // 固定展开态，离开时不自动收起
   docked: loadDocked(), // 是否吸附在屏幕顶部
   notice: null, // 临时通知（如"检测到复制了链接"），非空时胶囊进入通知态
+  // 在放什么（由音乐模块维护，null = 没在放）。
+  // 和 notice 一个套路：非空时紧凑态让位给歌词条。
+  media: null,
 })
 
 // 一级模块 ↔ 应用 id 的归属（和设置面板「应用」页的分组一致）
 export const APP_MODULE = {
   time: 'time',
-  todo: 'work',
-  notes: 'work',
-  clipboard: 'collect',
-  phrases: 'collect',
+  efficiency: 'efficiency',
+  music: 'music',
   'material-box': 'collect',
   net: 'system',
+}
+
+// 「一个应用里含多个模式」的应用：只要还有模式开着，这个应用就保留。
+// 四个模式 id 就是设置里的 enabledSubs 键。
+const APP_SUB_IDS = {
+  time: ['clock', 'countdown', 'reminder', 'focus'],
+  efficiency: ['notes', 'todo', 'phrases', 'clipboard'],
 }
 
 // 设置里停用的模块 / 小功能，其下的应用不再出现在标签栏。
@@ -45,14 +55,13 @@ export const APP_MODULE = {
 // 这里用 ref + watch 显式重建，而不是 computed：实测模块级的 computed
 // 在设置经 IPC 更新后不会失效（同一个过滤逻辑现场新建 computed 就是对的），
 // 表现是「关掉某个模块后标签栏不变」。显式重建不依赖那套失效传播，确定可靠。
-const TIME_SUB_IDS = ['clock', 'countdown', 'reminder', 'focus']
-
 function filterApps() {
   const all = getApps()
   const on = all.filter((a) => {
     if (!moduleEnabled(APP_MODULE[a.id] || 'system')) return false
-    // time 是一个应用里含四个模式：只要还有模式开着，这个应用就保留
-    if (a.id === 'time') return TIME_SUB_IDS.some((id) => subEnabled(id))
+    // 多模式应用：只要还有模式开着就保留
+    const subs = APP_SUB_IDS[a.id]
+    if (subs) return subs.some((id) => subEnabled(id))
     return subEnabled(a.id)
   })
   return on.length ? on : all
@@ -82,9 +91,28 @@ watch(apps, (list) => {
 
 let pillEl = null
 
+// 展开宽度按应用自适应：应用可以在注册表里声明 expandedW（比如时间应用的卡片堆栈
+// 需要更宽的画布，才放得下"当前卡 + 两侧露出的邻卡"）。
+// 窗口宽度按最宽的那个应用预留，见 electron/main.js 的 WIN。
+export const expandedWidth = computed(() => {
+  const w = Number(activeApp.value && activeApp.value.expandedW)
+  return w > 0 ? w : SIZES.expanded.w
+})
+
+// 展开高度也能按应用声明：音乐应用是"半高"面板（封面 + 歌词 + 控制器）
+export const expandedHeight = computed(() => {
+  const h = Number(activeApp.value && activeApp.value.expandedH)
+  return h > 0 ? h : SIZES.expanded.h
+})
+
 function currentSize() {
   if (island.notice) return SIZES.notice
-  return island.mode === 'expanded' ? SIZES.expanded : SIZES.compact
+  if (island.mode === 'expanded') {
+    return { ...SIZES.expanded, w: expandedWidth.value, h: expandedHeight.value }
+  }
+  // 在放歌且没关掉时，紧凑态让位给歌词条
+  if (island.media && island.media.lyricPill) return SIZES.lyric
+  return SIZES.compact
 }
 
 function currentTop() {
@@ -98,8 +126,9 @@ function cornerRadius() {
   return { tl: topR, tr: topR, bl: r, br: r }
 }
 
-// 记录上一次的目标高度：用来判断这次是"放大"还是"缩小"
+// 记录上一次的目标高度/宽度：用来判断这次是"放大"还是"缩小"
 let lastH = SIZES.compact.h
+let lastW = SIZES.compact.w
 
 // 绑定胶囊 DOM，初始化尺寸 / 圆角 / 位置与 GPU 合成提示
 export function bindPill(el) {
@@ -108,6 +137,7 @@ export function bindPill(el) {
     const s = currentSize()
     const c = cornerRadius()
     lastH = s.h
+    lastW = s.w
     gsap.set(el, {
       width: s.w,
       height: s.h,
@@ -131,8 +161,11 @@ function syncShape() {
   if (!pillEl) return
   const s = currentSize()
   const c = cornerRadius()
-  const growing = s.h >= lastH
+  // 只换应用时高度不变、宽度会变，所以宽度也要参与"放大 / 缩小"的判断，
+  // 否则换到更窄的应用也会用 back.out 往外冲一下。
+  const growing = s.h > lastH || (s.h === lastH && s.w > lastW)
   lastH = s.h
+  lastW = s.w
 
   // 「动画」设置：完整 / 简洁 / 关闭。
   // scale 同时缩时长与过冲量；0 表示完全不过渡，直接到位。
@@ -345,6 +378,22 @@ export function toggleDock() {
   setDock(!island.docked)
 }
 
+// 在放歌 / 停止播放时胶囊要在「紧凑态 ↔ 歌词态」之间形变。
+// island.media 由音乐模块维护，这里只需要在它翻转时补一次 syncShape。
+watch(
+  () => (island.media ? 1 : 0),
+  () => syncShape()
+)
+
+// 展开态下切应用：不同应用的展开宽度可能不同（宽应用见 expandedWidth），
+// 而 switchApp 里那句 expand() 在已经展开时会直接 return，所以这里补一次形变。
+watch(
+  () => island.activeAppId,
+  () => {
+    if (island.mode === 'expanded') syncShape()
+  }
+)
+
 // ---------- 设置 → 岛状态 ----------
 // 设置存在主进程、异步 hydrate；这里把相关项落到运行时状态上。
 // 只在「值真的不同」时写，避免和 setDock 的回写互相打架。
@@ -365,7 +414,17 @@ watch(
   ([id, ready]) => {
     if (!ready || appliedDefaultApp) return
     appliedDefaultApp = true
-    if (typeof id === 'string' && id && getApp(id)) island.activeAppId = id
+    if (typeof id === 'string' && id && getApp(id)) {
+      island.activeAppId = id
+      return
+    }
+    // 存着一个已经不存在应用 id 的情况：老版本选过「便签 / 待办 / 常用语 / 剪贴板」
+    // 作为默认应用，它们现在已被收进「效率」。这里把设置回写成第一个真实存在的应用，
+    // 否则「外观 → 展开时默认打开」那个下拉会显示一个不在清单里的值。
+    if (typeof id === 'string' && id) {
+      const first = getApps()[0]
+      if (first) update({ defaultApp: first.id })
+    }
   }
 )
 
