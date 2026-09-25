@@ -76,6 +76,8 @@ contextBridge.exposeInMainWorld('api', {
   musicCommand: (cmd) => ipcRenderer.send('music:command', cmd),
   // 手动对轴：点某句歌词 = "从现在起按这句同步"
   musicRealign: (ms) => ipcRenderer.send('music:realign', ms),
+  // 按需启动：展开到音乐面板时才叫主进程拉起常驻的 SMTC helper
+  musicArm: () => ipcRenderer.send('music:arm'),
   musicLyricsDir: () => ipcRenderer.invoke('music:lyrics-dir'),
   musicOpenLyricsDir: () => ipcRenderer.invoke('music:open-lyrics-dir'),
   onMusicChanged: (cb) => ipcRenderer.on('music:changed', (e, s) => cb(s)),

@@ -341,6 +341,17 @@ export const fallback =
   )
 
 
+// 主进程是否已经为用户拉起过常驻的 SMTC helper（按需启动，见文件末尾的 watch）。
+// 未拉起时面板显示"正在连接播放器…"而不是"未在播放"，避免误导。
+export const armed =
+  computed(() =>
+    !!(
+      snap.value &&
+      snap.value.armed
+    )
+  )
+
+
 export const canPlay =
   computed(() =>
     !!(
@@ -987,6 +998,39 @@ watch(
 
 
 // --------------------------------------------------
+// 按需启动常驻 helper
+// --------------------------------------------------
+
+/*
+ * 主进程那个 SMTC helper 是个常驻 PowerShell 子进程，实测约 100MB ——
+ * 比整个渲染进程还贵。所以默认不启动它，只有用户真的把岛展开到
+ * 「音乐」面板，才值得花这笔钱（主进程会把这个事实记进设置，
+ * 之后每次启动直接恢复，胶囊歌词条照常工作）。
+ *
+ * 代价是：从没打开过音乐面板的人，播歌也不会看到歌词条 ——
+ * 因为"现在在放什么"这件事本身就是 helper 提供的，不跑它就无从得知。
+ */
+watch(
+  () =>
+    island.mode === 'expanded' &&
+    island.activeAppId === 'music',
+  (on) => {
+    if (
+      on &&
+      typeof window !== 'undefined' &&
+      window.api &&
+      window.api.musicArm
+    ) {
+      window.api.musicArm()
+    }
+  },
+  {
+    immediate: true
+  }
+)
+
+
+// --------------------------------------------------
 // 歌词索引时钟
 // --------------------------------------------------
 
@@ -1050,6 +1094,7 @@ export function useMusic() {
     loading,
     estimated,
     fallback,
+    armed,
 
     // 播放能力
     canPlay,

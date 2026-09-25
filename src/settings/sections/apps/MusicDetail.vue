@@ -92,6 +92,13 @@ const playerOptions = [
 
 const dir = ref('')
 onMounted(async () => {
+  // 打开这一页说明用户确实在关心音乐，和「展开到音乐面板」一样算数：
+  // 让主进程按需拉起常驻的 SMTC helper（默认不启动，实测常驻约 100MB）。
+  try {
+    if (window.api.musicArm) window.api.musicArm()
+  } catch {
+    /* ignore */
+  }
   try {
     dir.value = (await window.api.musicLyricsDir()) || ''
   } catch {

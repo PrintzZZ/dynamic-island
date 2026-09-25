@@ -1,10 +1,14 @@
 <template>
   <div class="music-app">
-    <!-- 没在放任何东西 -->
+    <!-- 没在放任何东西。
+         armed=false 表示常驻的媒体会话监听还没被按需拉起（用户第一次打开音乐面板时启动），
+         这时显示"正在连接播放器…"而不是"未在播放" —— 后者会让人以为坏了。 -->
     <div v-if="!hasTrack" class="empty">
       <Icon name="volume" class="empty-ico" />
-      <div class="empty-text">未在播放</div>
-      <div class="empty-hint">在任意播放器里开始播放，这里会自动出现</div>
+      <div class="empty-text">{{ armed ? '未在播放' : '正在连接播放器…' }}</div>
+      <div class="empty-hint">
+        {{ armed ? '在任意播放器里开始播放，这里会自动出现' : '首次打开需要启动媒体会话监听，稍等一下' }}
+      </div>
     </div>
 
     <template v-else>
@@ -106,6 +110,7 @@ const {
   loading,
   estimated,
   fallback,
+  armed,
   canControl,
   canNext,
   canPrev,

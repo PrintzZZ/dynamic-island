@@ -111,6 +111,11 @@ export const DEFAULTS = {
   musicLyricOnline: true, // 允许在线找歌词（会把歌名与歌手发到公开歌词库）
   musicLyricNetease: true, // 网易云歌词源（非官方接口，可单独关）
   musicLyricQQ: true, // QQ音乐歌词源（非官方接口，可单独关）
+  // 按需启动：是否已经为用户拉起过常驻的 SMTC helper。
+  // 它是个 PowerShell 子进程，实测常驻约 100MB，所以没被真正用到之前不启动；
+  // 用户第一次展开到音乐面板时置 true，之后每次启动直接恢复。
+  // 属于「使用记录」而不是偏好，恢复默认设置时不重置（见 reset 的 keep）。
+  musicArmed: false,
 
   // 材料箱
   mboxOpenAfterZip: true,
@@ -197,6 +202,7 @@ function sanitize(raw) {
   s.musicLyricOnline = bool(s.musicLyricOnline, DEFAULTS.musicLyricOnline)
   s.musicLyricNetease = bool(s.musicLyricNetease, DEFAULTS.musicLyricNetease)
   s.musicLyricQQ = bool(s.musicLyricQQ, DEFAULTS.musicLyricQQ)
+  s.musicArmed = bool(s.musicArmed, DEFAULTS.musicArmed)
   // 材料箱
   s.mboxOpenAfterZip = bool(s.mboxOpenAfterZip, DEFAULTS.mboxOpenAfterZip)
   s.mboxSaveDir = oneOf(s.mboxSaveDir, MBOX_SAVE_DIRS, DEFAULTS.mboxSaveDir)
@@ -255,7 +261,9 @@ export function set(patch) {
 export function reset() {
   // 位置与初始化标记保留，其余回默认。**只动偏好**：
   // 便签 / 待办 / 时间统计 / 剪贴板历史 / 材料箱任务都不在这里，不会被碰。
-  const keep = { lastX: load().lastX, lastY: load().lastY }
+  // musicArmed 是「使用记录」不是偏好：重置掉它会让正在用音乐的人突然丢掉歌词条，
+  // 所以和位置一样保留。
+  const keep = { lastX: load().lastX, lastY: load().lastY, musicArmed: load().musicArmed }
   cache = sanitize({ ...keep, seeded: true })
   save()
   apply()

@@ -57,6 +57,8 @@ function estReset(playing) {
 
 function baseSnapshot() {
   return {
+    // 是否已经为用户拉起过常驻的 SMTC helper（见 refreshMusicSettings / armMusic）
+    armed: armedFlag,
     playing: false,
     app: '',
     title: '',
@@ -79,6 +81,12 @@ function baseSnapshot() {
     loading: false,
   }
 }
+
+// 是否已经为用户拉起过 helper。helper 是个常驻 PowerShell 子进程，实测约 100MB，
+// 所以默认（musicArmed=false）不启动它 —— 只有用户真的展开到音乐面板才值得。
+// 必须在 baseSnapshot() 之前声明：baseSnapshot() 会读它，而它是 let（有 TDZ），
+// 放到下面会让模块初始化直接抛 "Cannot access before initialization"。
+let armedFlag = false
 
 let snap = baseSnapshot()
 
@@ -245,13 +253,19 @@ export function disposeMusic() {
 }
 
 // 设置变了：开关音乐模块、换播放器、改歌词源，都要立刻生效。
-// helper 常驻是有成本的（一个 powershell.exe 大约 40MB），所以模块被关掉时就停掉它。
+//
+// 关于 helper 的常驻成本：它是个 PowerShell 子进程，**实测约 100MB**（裸 powershell
+// 空跑就占 72MB，我们的脚本再占 ~30MB）。所以这里改成「按需启动」：
+// 只有 musicArmed 为真（用户曾经展开过音乐面板）才真的拉起它。
+// 从没打开过音乐的人，一分钱不花；用过的人下次启动直接恢复，胶囊歌词条照常工作。
 export function refreshMusicSettings() {
   const s = settings.load()
   const on = s.enabledApps?.music !== false && s.enabledSubs?.music !== false
+  armedFlag = s.musicArmed === true
   lastTrackKey = null // 强制造一次曲目变更，重新拉歌词
   gen += 1
-  if (!on) {
+  if (!on || !armedFlag) {
+    // 模块被关掉，或用户还没打开过音乐面板 → 不常驻 helper
     stopSmtc()
     snap = baseSnapshot()
     broadcast()
@@ -260,6 +274,18 @@ export function refreshMusicSettings() {
   setTargetPlayer(s.musicPlayer || 'auto')
   startSmtc()
   onMediaChanged()
+}
+
+// 用户第一次把岛展开到音乐面板：这才是值得为它常驻一个 helper 的时刻。
+// 记进设置，之后每次启动就都直接恢复。
+export function armMusic() {
+  const s = settings.load()
+  if (s.musicArmed === true) {
+    if (!armedFlag) refreshMusicSettings() // 之前被关过模块，重新拉起来
+    return
+  }
+  settings.set({ musicArmed: true })
+  refreshMusicSettings()
 }
 
 export function registerMusicIpc() {
@@ -289,6 +315,11 @@ export function registerMusicIpc() {
 
   ipcMain.on('music:command', (_e, cmd) => {
     sendMediaCommand(String(cmd || ''))
+  })
+
+  // 按需启动：渲染进程在"岛展开到音乐面板"时调一次
+  ipcMain.on('music:arm', () => {
+    armMusic()
   })
 
   // 手动对轴：把"现在"钉在某一句的起始时间上
