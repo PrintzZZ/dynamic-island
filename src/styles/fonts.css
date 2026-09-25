@@ -9,7 +9,9 @@
  *   → CSS 字重 100 / 200 / 300 / 400 / 500 / 600
  *   苹方没有更重的字重，700 / 800 直接复用 Semibold：显式声明是为了
  *   让浏览器用真字形，而不是把 Regular 拉成合成假粗。
+ *
  *   ⚠️ 苹方是 Apple 专有字体，授权仅限 Apple 设备，请勿公开分发。
+ *      src/assets/fonts/subset/ 是从它派生的子集，同样不进仓库。
  *
  * 中文（回退）：MiSans（小米，免费商用）
  *   https://hyperos.mi.com/font/  →  MiSans-Regular.woff2
@@ -19,9 +21,21 @@
  *
  * 字体栈顺序是 'Inter', 'PingFang SC', …：数字与拉丁字母命中 Inter，
  * 汉字落到苹方。两者都是几何无衬线、字面高度接近，中西文混排不跳字体。
+ *
+ * ---------- 子集优先 ----------
+ * 每个中文 @font-face 都写了两个 src：**先尝试 subset/ 下的子集，失败再退回完整字体**。
+ * 完整字重每个 42199 字形，在渲染进程里实测占 10.9MB；子集到 3755 个常用字 + 标点
+ * 之后只剩 1MB 出头。UI 常见的 500 / 600（以及紧凑态时间的 400）都因此大幅瘦身。
+ *
+ * 子集由 `npm run fonts:subset` 生成（见 scripts/subset-fonts.mjs）。没生成也不影响：
+ * 第二个 src 会加载完整字体，行为和以前完全一样。
+ *
+ * 子集**故意不含罕用字**，那些字会回落到字体栈里的 MiSans（完整字重，不参与子集化）——
+ * 这条回退链本来就在设计里（苹方缺失时就是回落到 MiSans），所以不会出现方块字。
  */
 
 /* ---------- 西文 / 数字：可变字重，一个文件覆盖 100–900 ---------- */
+/* 不做子集：西文只有 0.34MB，而且子集会把变音符/希腊字母裁掉，歌名里很常见 */
 @font-face {
   font-family: 'Inter';
   font-style: normal;
@@ -30,59 +44,74 @@
   src: url('../assets/fonts/InterVariable.woff2') format('woff2');
 }
 
-/* ---------- 中文首选：PingFang SC，按字重分文件 ---------- */
+/* ---------- 中文首选：PingFang SC，按字重分文件（子集优先，完整兜底） ---------- */
 @font-face {
   font-family: 'PingFang SC';
   font-style: normal;
   font-weight: 100;
   font-display: swap;
-  src: url('../assets/fonts/PingFangSC-Ultralight.woff2') format('woff2');
+  src:
+    url('../assets/fonts/subset/PingFangSC-Ultralight.woff2') format('woff2'),
+    url('../assets/fonts/PingFangSC-Ultralight.woff2') format('woff2');
 }
 @font-face {
   font-family: 'PingFang SC';
   font-style: normal;
   font-weight: 200;
   font-display: swap;
-  src: url('../assets/fonts/PingFangSC-Thin.woff2') format('woff2');
+  src:
+    url('../assets/fonts/subset/PingFangSC-Thin.woff2') format('woff2'),
+    url('../assets/fonts/PingFangSC-Thin.woff2') format('woff2');
 }
 @font-face {
   font-family: 'PingFang SC';
   font-style: normal;
   font-weight: 300;
   font-display: swap;
-  src: url('../assets/fonts/PingFangSC-Light.woff2') format('woff2');
+  src:
+    url('../assets/fonts/subset/PingFangSC-Light.woff2') format('woff2'),
+    url('../assets/fonts/PingFangSC-Light.woff2') format('woff2');
 }
 @font-face {
   font-family: 'PingFang SC';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('../assets/fonts/PingFangSC-Regular.woff2') format('woff2');
+  src:
+    url('../assets/fonts/subset/PingFangSC-Regular.woff2') format('woff2'),
+    url('../assets/fonts/PingFangSC-Regular.woff2') format('woff2');
 }
 @font-face {
   font-family: 'PingFang SC';
   font-style: normal;
   font-weight: 500;
   font-display: swap;
-  src: url('../assets/fonts/PingFangSC-Medium.woff2') format('woff2');
+  src:
+    url('../assets/fonts/subset/PingFangSC-Medium.woff2') format('woff2'),
+    url('../assets/fonts/PingFangSC-Medium.woff2') format('woff2');
 }
 @font-face {
   font-family: 'PingFang SC';
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url('../assets/fonts/PingFangSC-Semibold.woff2') format('woff2');
+  src:
+    url('../assets/fonts/subset/PingFangSC-Semibold.woff2') format('woff2'),
+    url('../assets/fonts/PingFangSC-Semibold.woff2') format('woff2');
 }
-/* 700 / 800：苹方最重只到 Semibold，复用它，避免合成假粗 */
+/* 700 / 800：苹方最重只到 Semibold，复用它，避免合成假粗
+   （实测浏览器按 URL 共享解码结果，不会因为两条规则而多占一份内存） */
 @font-face {
   font-family: 'PingFang SC';
   font-style: normal;
   font-weight: 700 800;
   font-display: swap;
-  src: url('../assets/fonts/PingFangSC-Semibold.woff2') format('woff2');
+  src:
+    url('../assets/fonts/subset/PingFangSC-Semibold.woff2') format('woff2'),
+    url('../assets/fonts/PingFangSC-Semibold.woff2') format('woff2');
 }
 
-/* ---------- 中文回退：MiSans（文件缺失时自动跳过，不会报错） ---------- */
+/* ---------- 中文回退：MiSans（完整字重，不参与子集化） ---------- */
 @font-face {
   font-family: 'MiSans';
   font-style: normal;

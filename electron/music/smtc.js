@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { HELPER_SCRIPT } from './helperScript.js'
+import CSHARP_SOURCE from './helper.cs?raw'
 
 const PS_EXE = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
 
@@ -161,6 +162,23 @@ export function currentPositionMs() {
 }
 
 // ---------- helper 生命周期 ----------
+//
+// 优先用 **C# 版**：同样的逻辑，实测常驻 34.6MB；而 PowerShell 版是 101.7MB
+// （裸 `powershell -NoProfile` 空跑就 71.7MB，纯属挑宿主的税）。
+// C# 版由系统自带的 csc.exe 在首次运行时编译一次，exe 缓存在 userData，
+// 之后直接跑 exe。csc / WinMetadata 缺失或编译失败时自动退回 PowerShell 版 ——
+// 功能完全一致，只是多占内存，所以这条路永远是安全的兜底。
+const CSC_CANDIDATES = [
+  path.join(process.env.SystemRoot || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'),
+  path.join(process.env.SystemRoot || 'C:\\Windows', 'Microsoft.NET', 'Framework', 'v4.0.30319', 'csc.exe'),
+]
+const WIN_META = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WinMetadata')
+
+let helperKind = 'ps1' // 'exe' | 'ps1'
+let csPath = ''
+let exePath = ''
+let preparing = null
+
 function ensureScript() {
   try {
     let cur = ''
@@ -173,6 +191,78 @@ function ensureScript() {
   } catch (e) {
     console.error('[music] 写 helper 脚本失败:', e && e.message)
   }
+}
+
+// 写 .cs（内容变了才写）→ 必要时用 csc 编译成 exe。resolve(true) 表示 exe 可用。
+function prepareHelperExe() {
+  return new Promise((resolve) => {
+    let settled = false
+    const done = (v) => {
+      if (!settled) {
+        settled = true
+        resolve(v)
+      }
+    }
+    try {
+      const csc = CSC_CANDIDATES.find((p) => fs.existsSync(p))
+      if (!csc) return done(false)
+      // 只用系统自带的这些：System.Runtime.dll 门面（和 csc 同目录）+ 各命名空间 winmd。
+      // 不引用 System.Runtime.WindowsRuntime —— 它会要求聚合的 Windows.winmd（只有 SDK 才有）。
+      const refs = [
+        path.join(path.dirname(csc), 'System.Runtime.dll'),
+        path.join(WIN_META, 'Windows.Foundation.winmd'),
+        path.join(WIN_META, 'Windows.Media.winmd'),
+        path.join(WIN_META, 'Windows.Storage.winmd'),
+        path.join(WIN_META, 'Windows.Data.winmd'),
+      ]
+      if (refs.some((p) => !fs.existsSync(p))) return done(false)
+
+      let cur = ''
+      try {
+        cur = fs.readFileSync(csPath, 'utf8')
+      } catch {
+        /* 首次 */
+      }
+      if (cur !== CSHARP_SOURCE) fs.writeFileSync(csPath, CSHARP_SOURCE, 'utf8')
+
+      // exe 比源码新就直接复用，别每次都编译
+      try {
+        if (fs.statSync(exePath).mtimeMs >= fs.statSync(csPath).mtimeMs) return done(true)
+      } catch {
+        /* 还没编译过 */
+      }
+
+      const args = ['/nologo', '/target:exe', `/out:${exePath}`, ...refs.map((r) => `/r:${r}`), csPath]
+      const cc = spawn(csc, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+      let errOut = ''
+      cc.stdout.on('data', () => {})
+      cc.stderr.setEncoding('utf8')
+      cc.stderr.on('data', (d) => {
+        errOut += d
+      })
+      const timer = setTimeout(() => {
+        try {
+          cc.kill()
+        } catch {
+          /* ignore */
+        }
+        done(false)
+      }, 30000)
+      cc.on('error', () => {
+        clearTimeout(timer)
+        done(false)
+      })
+      cc.on('exit', (code) => {
+        clearTimeout(timer)
+        if (code === 0 && fs.existsSync(exePath)) return done(true)
+        const first = String(errOut || '').split('\n').find((l) => l.includes('error'))
+        console.error('[music] csc 编译 helper 失败，退回 PowerShell 版:', first || `exit ${code}`)
+        done(false)
+      })
+    } catch {
+      done(false)
+    }
+  })
 }
 
 function scheduleRestart() {
@@ -188,15 +278,16 @@ function scheduleRestart() {
 
 function spawnHelper() {
   if (stopping || child) return
+  const isExe = helperKind === 'exe'
+  const exe = isExe ? exePath : PS_EXE
+  const args = isExe
+    ? ['-CmdFile', cmdPath, '-ParentPid', String(process.pid)]
+    : ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-CmdFile', cmdPath, '-ParentPid', String(process.pid)]
   try {
-    child = spawn(
-      PS_EXE,
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-CmdFile', cmdPath, '-ParentPid', String(process.pid)],
-      {
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }
-    )
+    child = spawn(exe, args, {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
   } catch (e) {
     console.error('[music] 启动 helper 失败:', e && e.message)
     child = null
@@ -255,12 +346,20 @@ function handleLine(line) {
 }
 
 export function startSmtc() {
-  if (child) return
+  if (child || preparing) return
   stopping = false
   scriptPath = path.join(app.getPath('userData'), 'smtc-helper.ps1')
   cmdPath = path.join(app.getPath('userData'), 'smtc-cmd.txt')
+  csPath = path.join(app.getPath('userData'), 'smtc-helper.cs')
+  exePath = path.join(app.getPath('userData'), 'smtc-helper.exe')
   ensureScript()
-  spawnHelper()
+  // 先确保 C# 版可用（首次要编译一次，约 1s），再决定跑哪个宿主
+  preparing = prepareHelperExe().then((ok) => {
+    preparing = null
+    helperKind = ok ? 'exe' : 'ps1'
+    if (stopping) return
+    spawnHelper()
+  })
 }
 
 export function stopSmtc() {

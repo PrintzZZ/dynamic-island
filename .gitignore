@@ -15,3 +15,7 @@ release2
 # /SFProPingFangSC-*.woff2 是早期那个实测只有 466 字形的废子集，已弃用。
 /src/assets/fonts/PingFangSC-*.woff2
 /SFProPingFangSC-*.woff2
+
+# 上一条的派生品：`npm run fonts:subset` 生成的常用字子集（同样是苹方的衍生数据，
+# 一样不能公开分发）。没生成也不影响运行 —— fonts.css 会退到完整字体。
+/src/assets/fonts/subset/
