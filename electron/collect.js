@@ -367,6 +367,7 @@ export function writeClipboardImageById(id, from) {
 
 let clipLastText = ''
 let lastImageSig = ''
+let lastImageAt = 0
 
 function pushClipText(text) {
   const t = String(text || '').trim()
@@ -394,10 +395,18 @@ function pushClipImage(img) {
   if (!img || img.isEmpty()) return null
   const size = img.getSize()
   if (!size || !size.width || !size.height) return null
-  // 同一张图连续触发时去重（很多软件会分两次写剪贴板）
+  // 同一次写入被拆成两个事件（很多软件会分阶段写剪贴板）才去重 —— 只看**很短的窗口内**。
+  // 不能"永不复位"地拿签名当历史：先复制图片 A、再复制文本、然后又复制同一张 A，
+  // 第二次会被静默丢掉（实测踩过）。
   const sig = `${size.width}x${size.height}:${img.toPNG().length}`
-  if (sig === lastImageSig) return null
+  const now = Date.now()
+  if (DEBUG) console.log('[collect:dbg] pushClipImage sig=' + sig + ' last=' + lastImageSig + ' dt=' + (now - lastImageAt))
+  if (sig === lastImageSig && now - lastImageAt < 800) {
+    if (DEBUG) console.log('[collect:dbg] 去重跳过')
+    return null
+  }
   lastImageSig = sig
+  lastImageAt = now
 
   ensureDirs()
   const id = uid('ci')
@@ -430,6 +439,7 @@ export function readClipboardNow() {
   // 1) 图片
   try {
     const img = clipboard.readImage()
+    if (DEBUG) console.log('[collect:dbg] readImage empty=' + img.isEmpty() + ' selfImage=' + isSelfImage() + ' clipOn=' + clipOn())
     if (img && !img.isEmpty()) {
       if (isSelfImage()) {
         if (DEBUG) console.log('[collect:dbg] 图片事件来自自己写入，忽略')
@@ -483,6 +493,7 @@ function scheduleRead(reason) {
     const item = readClipboardNow()
     if (item) {
       broadcast()
+      if (DEBUG) console.log('[collect:dbg] 发送 clipboard:new', item.kind, item.id, 'winRef=' + !!winRef)
       if (winRef && !winRef.isDestroyed()) {
         try {
           winRef.webContents.send('clipboard:new', item)
@@ -721,7 +732,11 @@ function makeThumb(srcFile, id) {
 export function imageAddFromClipImage(clipId) {
   const item = clipImages.find((x) => x.id === clipId)
   if (!item || !fs.existsSync(item.file)) return null
-  return imageImportOne(item.file, { name: `截图 ${new Date().toLocaleString('zh-CN', { hour12: false }).slice(5, 16)}` })
+  const d = new Date()
+  const p2 = (n) => String(n).padStart(2, '0')
+  // 手动拼时间：toLocaleString 的格式随系统变化，切片会切出「19:36:」这种尾巴
+  const stamp = `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`
+  return imageImportOne(item.file, { name: `截图 ${stamp}` })
 }
 
 // 从任意本地图片文件收进常用图片
