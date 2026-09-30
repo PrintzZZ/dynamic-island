@@ -19,3 +19,7 @@ release2
 # 上一条的派生品：`npm run fonts:subset` 生成的常用字子集（同样是苹方的衍生数据，
 # 一样不能公开分发）。没生成也不影响运行 —— fonts.css 会退到完整字体。
 /src/assets/fonts/subset/
+
+# 文档配图脚本（scripts/gen-doc-shots.cjs）的工作目录：
+# 临时 profile、演示素材、未加 --write 时的输出都在这儿。
+/.doc-shots/

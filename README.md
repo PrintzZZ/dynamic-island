@@ -58,6 +58,26 @@
 
 ## 界面预览
 
+**常用语与常用图片**（都在「效率」应用里，第二页签是图片）：常用语点一下即复制；
+**常用图片点缩略图就把图片本身写进系统剪贴板**，可以直接粘到微信 / Word / 浏览器。
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/app-phrases.png" alt="常用语" /></td>
+<td width="50%"><img src="docs/images/app-images.png" alt="常用图片" /></td>
+</tr>
+</table>
+
+**剪贴板**：从 700ms 轮询改成 **Windows 原生剪贴板事件**；识别**链接 / 电话 / 快递单号 /
+「姓名+电话+地址」**——点条目复制原文，点右侧 sparkle 复制标准化后的内容。
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/app-clipboard.png" alt="剪贴板 · 类型识别" /></td>
+<td width="50%"><img src="docs/images/clipboard-copied.png" alt="剪贴板 · 已复制反馈" /></td>
+</tr>
+</table>
+
 **音乐**：紧凑态让位给歌词条（266×40，封面在转 + 已唱亮色/未唱灰色）；展开态是半高面板，封面 + 歌词 + 进度 + 控制器。
 
 <table>
@@ -76,15 +96,14 @@
 </tr>
 <tr>
 <td><img src="docs/images/app-materialbox.png" alt="材料箱" /></td>
-<td><img src="docs/images/clipboard-copied.png" alt="剪贴板 · 一键跳转" /></td>
+<td><img src="docs/images/island-notice.png" alt="通知态 · 已截图 ☆" /></td>
 </tr>
 </table>
 
-**通知态**（复制到链接时胶囊主动形变，可直接打开）：
+> 通知态：截图后自动给一条弱提示「已截图 ☆」，点 ☆ 收进常用图片；错过了也没关系 ——
+> 到「常用图片」页按 <kbd>Ctrl</kbd>+<kbd>V</kbd> 就能把剪贴板里刚截的图直接存下来。
 
-<img src="docs/images/island-notice.png" alt="通知态" />
-
-**设置窗口**（常规 / 外观 / 应用）：
+**设置窗口**（常规 / 外观 / 应用 / 常用）：
 
 <table>
 <tr>
@@ -94,7 +113,15 @@
 </tr>
 </table>
 
-> 以上都是**真实构建产物的离屏渲染截图**，不是手绘稿；改动 UI 后按 [docs/images/README.md](docs/images/README.md) 重新生成。
+<table>
+<tr>
+<td width="50%"><img src="docs/images/settings-collect.png" alt="设置 · 常用（常用语）" /></td>
+<td width="50%"><img src="docs/images/settings-collect-images.png" alt="设置 · 常用（常用图片）" /></td>
+</tr>
+</table>
+
+> 以上都是**真实构建产物的离屏渲染截图**，不是手绘稿；改动 UI 后按 [docs/images/README.md](docs/images/README.md)
+> 重新生成（`npx electron scripts/gen-doc-shots.cjs --write`）。
 
 ## 运行
 
