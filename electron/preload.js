@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld('api', {
   imageUpdate: (id, patch) => ipcRenderer.invoke('collect:image-update', id, patch),
   imageRemove: (id) => ipcRenderer.invoke('collect:image-remove', id),
   imagePick: () => ipcRenderer.invoke('collect:image-pick'),
+  // Ctrl+V：把系统剪贴板里的图直接存成常用图片
+  imagePaste: () => ipcRenderer.invoke('collect:image-paste'),
   imageImport: (paths) => ipcRenderer.invoke('collect:image-import', paths),
   collectReveal: (p) => ipcRenderer.invoke('collect:reveal', p),
   collectOpenDir: () => ipcRenderer.invoke('collect:open-dir'),

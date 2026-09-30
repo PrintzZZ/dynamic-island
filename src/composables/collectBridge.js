@@ -35,14 +35,14 @@ function onNew(item) {
           accent: '#BF5AF2',
           icon: 'check',
           title: '已截图',
-          detail: '点右侧 ☆ 收藏到常用图片',
+          detail: '点 ☆ 收藏，或在常用图片页 Ctrl+V',
           clipId: item.id,
           source: 'clipboard',
           actions: [{ id: 'star', label: '☆', primary: true }],
         },
-        // 方案写的是 1~1.6 秒，但那样根本来不及点 ☆（macOS 的截图预览是 5 秒）。
-        // 取 3 秒 + 悬停暂停：还没看完就把鼠标移上去会自动暂停，够点得到。
-        3000
+        // 用户反馈等待偏长。现在 Ctrl+V 也能存图，不再依赖这一点窗口，所以从 3s 收到 2s
+        // （鼠标移上去仍会暂停计时，够点 ☆）。
+        2000
       )
     }
     return
@@ -59,15 +59,18 @@ function onNew(item) {
     island.mode === 'compact' &&
     !document.hidden
   if (allow) {
-    // 不传 duration：用设置里的「通知显示时间」
-    showNotice({
-      accent: '#5AC8FA',
-      icon: 'link',
-      title: '检测到复制了链接',
-      detail: item.url,
-      url: item.url,
-      source: 'clipboard',
-    })
+    // 显式给 2.5s：原来不传时长会用设置里的「通知显示时间」（默认 6s），用户反馈偏长
+    showNotice(
+      {
+        accent: '#5AC8FA',
+        icon: 'link',
+        title: '检测到复制了链接',
+        detail: item.url,
+        url: item.url,
+        source: 'clipboard',
+      },
+      2500
+    )
   }
 }
 

@@ -42,6 +42,10 @@
       </button>
     </div>
 
+    <div v-if="view === 'images'" class="cl-hint">
+      刚截完图不用管星标 —— 直接按 <kbd>Ctrl</kbd>+<kbd>V</kbd> 就能把剪贴板里的图存成常用图
+    </div>
+
     <!-- ---------- 常用语 ---------- -->
     <template v-if="view === 'phrases'">
       <div v-if="!list.length" class="cl-empty">
@@ -99,7 +103,7 @@
     <template v-else>
       <div v-if="!list.length" class="cl-empty">
         <template v-if="q.trim()">没有匹配「{{ q.trim() }}」—— 换个关键词，或点「导入图片」</template>
-        <template v-else>还没有常用图片 —— 截图后点岛上提示条的 ☆，或点「导入图片」</template>
+        <template v-else>还没有常用图片 —— 按 Ctrl+V 把剪贴板里的图存进来，或点「导入图片」</template>
       </div>
 
       <div v-else class="wf">
@@ -156,12 +160,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   CATEGORIES,
   filterCollect,
   images,
   initCollectState,
+  installPasteHandler,
   phrases,
   removeImage,
   removePhrase,
@@ -293,8 +298,22 @@ async function doImport() {
   if (r && r.ok) say(`已导入 ${r.added ? r.added.length : 0} 张`)
 }
 
+// Ctrl+V：在「常用图片」页直接把剪贴板里的图存成常用图 ——
+// 刚截完图（截图工具已把图放进剪贴板）就不用再去点岛上的星标了
+let offPaste = null
 onMounted(() => {
   initCollectState()
+  offPaste = installPasteHandler(
+    () => view.value === 'images',
+    (r) => {
+      if (r && r.ok) say('已从剪贴板保存 1 张')
+      else if (r && r.error === 'EMPTY') say('剪贴板里没有图片')
+      else say('保存失败')
+    }
+  )
+})
+onUnmounted(() => {
+  if (offPaste) offPaste()
 })
 </script>
 
@@ -567,6 +586,23 @@ onMounted(() => {
 }
 
 /* ---------- 空态与提示 ---------- */
+.cl-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+  font-size: 11.5px;
+  color: var(--st-text-3, rgba(255, 255, 255, 0.42));
+}
+.cl-hint kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--st-line, rgba(255, 255, 255, 0.16));
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  font-family: inherit;
+  font-size: 10.5px;
+  color: var(--st-text-2, rgba(255, 255, 255, 0.7));
+}
 .cl-empty {
   padding: 40px 0;
   text-align: center;

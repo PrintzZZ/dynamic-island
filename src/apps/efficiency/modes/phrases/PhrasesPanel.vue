@@ -81,6 +81,7 @@
           @click="copyImage(m)"
         >
           <img :src="thumbUrl(m.id)" :alt="m.name" loading="lazy" />
+          <span class="pic-name">{{ m.name }}</span>
           <span v-if="copiedId === m.id" class="pic-badge copied">
             <Icon name="check" class="copied-ico" />已复制
           </span>
@@ -97,7 +98,7 @@
         <template v-else>
           <div class="empty-text">还没有常用图片</div>
           <div class="empty-hint">
-            截图后点岛上提示条的 ☆ 收藏<br />或点上方 ＋ 导入本地图片
+            按 Ctrl+V 把剪贴板里的图存进来<br />或点上方 ＋ 导入本地图片
           </div>
         </template>
       </div>
@@ -110,12 +111,13 @@
 </template>
 
 <script setup>
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import Icon from '../../../../components/Icon.vue'
 import {
   addPhrase,
   filterCollect,
   images,
+  installPasteHandler,
   phrases,
   pickImages,
   removePhrase,
@@ -203,9 +205,23 @@ async function pick() {
   if (r && r.ok) flash(null, `已导入 ${r.added ? r.added.length : 0} 张`)
 }
 
+// Ctrl+V：在「图片」页直接把剪贴板里的图存成常用图。
+// 这样刚截完图（截图工具已经把图放进剪贴板）就不必去点岛上的星标了。
+let offPaste = null
+onMounted(() => {
+  offPaste = installPasteHandler(
+    () => view.value === 'image',
+    (r) => {
+      if (r && r.ok) flash(null, '已从剪贴板保存 1 张')
+      else if (r && r.error === 'EMPTY') flash(null, '剪贴板里没有图片')
+    }
+  )
+})
+
 onUnmounted(() => {
   if (copiedTimer) clearTimeout(copiedTimer)
   if (toastTimer) clearTimeout(toastTimer)
+  if (offPaste) offPaste()
 })
 </script>
 
@@ -504,6 +520,19 @@ onUnmounted(() => {
 .pic img {
   width: 100%;
   display: block;
+}
+.pic-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: #f5f5f7;
+  background: rgba(0, 0, 0, 0.45);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
 }
 .pic-star {
   position: absolute;

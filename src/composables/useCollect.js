@@ -114,6 +114,29 @@ export async function pickImages() {
   return a.imagePick()
 }
 
+// Ctrl+V：把系统剪贴板里的图直接存成常用图片（省掉"忘记点星标"那一步）
+export async function pasteImage() {
+  const a = api()
+  if (!a || !a.imagePaste) return { ok: false, error: 'NO_API' }
+  return a.imagePaste()
+}
+
+// 全局粘贴监听：只在指定视图生效；焦点在输入框/文本域里时不拦截
+// （否则用户想在搜索框里粘贴文字会被抢走）
+export function installPasteHandler(getEnabled, onResult) {
+  if (typeof window === 'undefined') return () => {}
+  const handler = async (e) => {
+    if (!getEnabled()) return
+    const t = e.target
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+    e.preventDefault()
+    const r = await pasteImage()
+    if (onResult) onResult(r)
+  }
+  window.addEventListener('paste', handler)
+  return () => window.removeEventListener('paste', handler)
+}
+
 export async function importImages(paths) {
   const a = api()
   if (!a || !a.imageImport) return { ok: false }

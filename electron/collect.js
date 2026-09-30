@@ -309,6 +309,86 @@ export function clipExtractUrl(text) {
   return url || null
 }
 
+// ---------------------------------------------------------------- 内容识别
+
+// 手机号（大陆）：1[3-9] + 9 位
+const RE_MOBILE = /1[3-9]\d{9}/
+// 地址特征字：出现一个基本就能判断是地址行
+const RE_ADDR = /[省市区县镇乡村路街道巷弄号栋幢座单元室楼层]/
+// 姓名：2~6 个汉字（含少数民族姓名的间隔号），不含数字
+const RE_NAME = /^[\u4e00-\u9fa5·]{2,6}$/
+// 快递单号：常见承运商前缀，或 10~20 位纯数字
+const RE_EXPRESS_PREFIX = /^(?:SF|JD|YT|ZT|YD|STO|EMS|DBL|JDL|DHL|UPS|FEDEX|ZTO|YTO|ANE|BEST|TTKD|CN)[A-Za-z0-9]{6,22}$/i
+const RE_EXPRESS_PLAIN = /^\d{10,20}$/
+
+// 「姓名 电话 地址」→「姓名，电话，地址」
+// 用户原话：识别到这种格式就自动修正为标准地址格式
+export function normalizeAddress(text) {
+  const raw = String(text || '').trim()
+  if (!raw || raw.length > 400) return null
+
+  // 1) 单行写法：张三 13800138000 广东省深圳市南山区科技园路 1 号
+  const one = raw.match(/^([\u4e00-\u9fa5·]{2,6})[\s,，、]+(1[3-9]\d{9})[\s,，、]+(\S[\s\S]{4,})$/)
+  if (one) {
+    const addr = one[3].replace(/\s+/g, '').trim()
+    if (RE_ADDR.test(addr) && addr.length >= 6) return `${one[1]}，${one[2]}，${addr}`
+  }
+
+  // 2) 多行写法（收货信息最典型的就是三行）
+  const lines = raw.split(/[\n\r]+/).map((s) => s.trim()).filter(Boolean)
+  if (lines.length < 2 || lines.length > 8) return null
+  let name = ''
+  let phone = ''
+  let addr = ''
+  for (const line of lines) {
+    const compact = line.replace(/[\s\-()（）]/g, '')
+    if (!phone && compact.length <= 20 && RE_MOBILE.test(compact)) {
+      phone = (compact.match(RE_MOBILE) || [''])[0]
+      continue
+    }
+    if (!name && RE_NAME.test(line) && !RE_ADDR.test(line)) {
+      name = line
+      continue
+    }
+    if (RE_ADDR.test(line) && line.length >= 6) addr += line
+    else if (addr) addr += line
+  }
+  if (name && phone && addr && addr.length >= 6) return `${name}，${phone}，${addr}`
+  return null
+}
+
+// 识别条目类型，并给出「快捷复制」的内容（没有就是空串）
+// 约定：点条目本身复制**原文**，点右侧 sparkle 按钮复制 quick（标准格式 / 纯号码等）
+export function classifyText(text) {
+  const t = String(text || '').trim()
+  if (!t) return { kind: '', quick: '', quickLabel: '' }
+
+  // 地址块优先：它本身也含手机号，但用户要的是整段标准化
+  const addr = normalizeAddress(t)
+  if (addr) return { kind: 'address', quick: addr, quickLabel: '标准地址格式：姓名，电话，地址' }
+
+  const compact = t.replace(/[\s\-()（）]/g, '')
+
+  // 整条就是一个号码
+  if (/^1[3-9]\d{9}$/.test(compact)) return { kind: 'phone', quick: compact, quickLabel: '纯手机号' }
+  if (t.length <= 20 && /^(?:0\d{2,3})?\d{7,8}$/.test(compact)) {
+    return { kind: 'phone', quick: compact, quickLabel: '纯号码' }
+  }
+
+  // 短文本里夹着一个手机号 → 快捷复制就复制那个号
+  if (t.length <= 60 && compact.length > 11) {
+    const m = t.match(RE_MOBILE)
+    if (m) return { kind: 'phone', quick: m[0], quickLabel: `只复制号码 ${m[0]}` }
+  }
+
+  // 快递单号
+  if (RE_EXPRESS_PREFIX.test(t) || RE_EXPRESS_PLAIN.test(t)) {
+    return { kind: 'express', quick: t.replace(/\s+/g, ''), quickLabel: '纯单号' }
+  }
+
+  return { kind: '', quick: '', quickLabel: '' }
+}
+
 // ---------------------------------------------------------------- 剪贴板写入（内部写入保护）
 
 // 方案第 16 条 + 第 66/67 条：程序自己写进剪贴板的内容，不能再被监听器当成"用户复制的"
@@ -378,12 +458,18 @@ function pushClipText(text) {
     clipItems.splice(dup, 1)
   }
   const url = clipExtractUrl(t)
+  // 链接优先（有 url 就按链接处理，右侧给"一键打开"）；
+  // 否则看是不是电话 / 快递单号 / 姓名+电话+地址块，命中就给一个"快捷复制"按钮
+  const c = classifyText(t)
+  const kind = url ? 'link' : c.kind || 'text'
   const item = {
     id: uid('c'),
-    kind: url ? 'link' : 'text',
+    kind,
     text: t,
     url,
     at: Date.now(),
+    quick: c.quick || '',
+    quickLabel: c.quickLabel || '',
   }
   clipItems.unshift(item)
   if (clipItems.length > clipMax()) clipItems.length = clipMax()
@@ -978,6 +1064,55 @@ export function registerCollectIpc() {
   ipcMain.handle('collect:image-update', (_e, id, patch) => imageUpdate(String(id || ''), patch || {}))
   ipcMain.handle('collect:image-remove', (_e, id) => imageRemove(String(id || '')))
   ipcMain.handle('collect:image-pick', () => imagePickAndImport())
+
+  // Ctrl+V 直接保存：在「常用图片」页按 Ctrl+V，就把系统剪贴板里刚截的那张图
+  // 直接存成常用图片 —— 省掉"先点岛上星标、忘了就没了"这一步。
+  ipcMain.handle('collect:image-paste', () => {
+    let img = null
+    try {
+      img = clipboard.readImage()
+    } catch {
+      return { ok: false, error: 'CLIPBOARD' }
+    }
+    if (!img || img.isEmpty()) return { ok: false, error: 'EMPTY' }
+    ensureDirs()
+    const id = uid('img')
+    const file = path.join(dirs().images, `${id}.png`)
+    try {
+      fs.writeFileSync(file, img.toPNG())
+    } catch (e) {
+      console.error('[collect] 保存粘贴的图片失败', e && e.message)
+      return { ok: false, error: 'WRITE' }
+    }
+    const thumb = makeThumb(file, id)
+    let bytes = 0
+    try {
+      bytes = fs.statSync(file).size
+    } catch {
+      /* ignore */
+    }
+    const d = new Date()
+    const p2 = (n) => String(n).padStart(2, '0')
+    const now = Date.now()
+    const m = {
+      id,
+      name: `粘贴 ${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`,
+      category: '',
+      favorite: false,
+      useCount: 0,
+      lastUsedAt: 0,
+      createdAt: now,
+      updatedAt: now,
+      ext: 'png',
+      bytes,
+      w: thumb ? thumb.w : 0,
+      h: thumb ? thumb.h : 0,
+    }
+    images.unshift(m)
+    writeImagesMeta()
+    broadcast()
+    return { ok: true, added: m }
+  })
   ipcMain.handle('collect:image-import', (_e, paths) => {
     const list = Array.isArray(paths) ? paths : []
     const added = []

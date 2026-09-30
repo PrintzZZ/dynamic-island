@@ -10,43 +10,17 @@
         清空
       </button>
     </div>
-
-    <div class="search-bar">
+    <!-- 不需要搜索 -->
+    <!-- <div class="search-bar">
       <Icon name="search" class="search-ico" />
       <input v-model="keyword" class="search-input" placeholder="搜索剪贴板…" />
       <button v-if="keyword" class="search-clear" title="清除" @click="keyword = ''">
         <Icon name="close" class="search-clear-ico" />
       </button>
-    </div>
+    </div> -->
 
-    <!-- 最近图片（临时池，最多 10 张）：点一下复制图片，☆ 收进常用图片。
-         截图后如果错过了岛上那 3 秒提示条，可以在这里补收。 -->
-    <div v-if="recentImages.length" class="recent">
-      <div class="recent-head">
-        <span class="recent-title">最近图片</span>
-        <span class="recent-hint">{{ recentImages.length }}/10 · 点图即复制 · ★ 收进常用</span>
-      </div>
-      <div class="recent-strip">
-        <div
-          v-for="m in recentImages"
-          :key="m.id"
-          class="recent-pic"
-          :class="{ copied: copiedId === m.id, saved: m.starred }"
-          :title="`${m.w}×${m.h}｜点击复制图片`"
-          @click="copyRecent(m)"
-        >
-          <img :src="clipUrl(m.id)" alt="" />
-          <button
-            class="recent-star"
-            :class="{ on: m.starred }"
-            :title="m.starred ? '已在常用图片' : '收进常用图片'"
-            @click.stop="starRecent(m)"
-          >
-            {{ m.starred ? '★' : '☆' }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- 「最近图片」已移除：改为在「常用图片」页直接 Ctrl+V 粘贴剪贴板里的图并保存，
+         不用再记得点星标，剪贴板页也更清爽。 -->
 
     <div v-if="filtered.length" class="list">
       <TransitionGroup name="clip">
@@ -58,14 +32,15 @@
           :title="it.url ? '点击复制 · 右侧可打开链接' : '点击复制'"
           @click="copyItem(it)"
         >
-          <div class="kind" :class="{ link: !!it.url }">
-            <Icon :name="it.url ? 'link' : 'clipboard'" class="kind-ico" />
+          <div class="kind" :class="it.kind || 'text'">
+            <Icon :name="kindIcon(it)" class="kind-ico" />
           </div>
 
           <div class="body">
             <div class="text">{{ it.text }}</div>
             <div class="meta">
-              {{ fmtTime(it.at) }}<span v-if="it.url" class="meta-link"> · 链接</span>
+              {{ fmtTime(it.at)
+              }}<span v-if="typeLabel(it)" class="meta-link"> · {{ typeLabel(it) }}</span>
             </div>
           </div>
 
@@ -75,6 +50,17 @@
               <span class="copied-text">已复制</span>
             </span>
           </Transition>
+
+          <!-- 识别到电话 / 快递单号 / 姓名+电话+地址：
+               点这里复制**标准化后**的内容，点条目本身仍是原文 -->
+          <button
+            v-if="it.quick"
+            class="act quick"
+            :title="`快捷复制：${it.quickLabel}`"
+            @click.stop="copyQuick(it)"
+          >
+            <Icon name="sparkle" class="act-ico" />
+          </button>
 
           <!-- 识别到网址：一键跳转 -->
           <button v-if="it.url" class="act jump" title="打开链接" @click.stop="openItem(it)">
@@ -88,7 +74,7 @@
       </TransitionGroup>
     </div>
 
-    <div v-else-if="!recentImages.length" class="empty">
+    <div v-else class="empty">
       <div class="empty-icon">
         <Icon :name="keyword ? 'search' : 'clipboard'" class="empty-ico" />
       </div>
@@ -98,10 +84,10 @@
 
     <div class="foot">
       <div class="foot-label">
-        <Icon name="link" class="foot-ico" />
-        <span>复制到链接时提醒我</span>
+        <!-- <Icon name="link" class="foot-ico" />
+        <span>复制到链接时提醒我</span> -->
       </div>
-      <button
+      <!-- <button
         class="switch"
         :class="{ on: settings.alertOnLink }"
         :aria-pressed="String(settings.alertOnLink)"
@@ -109,7 +95,7 @@
         @click="settings.alertOnLink = !settings.alertOnLink"
       >
         <span class="knob" />
-      </button>
+      </button> -->
     </div>
 
     <!-- 复制提示：整页右下角浮一条，行内的高亮容易被列表本身淹没 -->
@@ -126,13 +112,11 @@
 import { computed, onUnmounted, ref } from 'vue'
 import Icon from '../../../../components/Icon.vue'
 import { useClipboard } from './useClipboard'
-import { clipImages, clipUrl } from '../../../../composables/useCollect'
 import { sfx } from '../../../../utils/sound'
 
 const { items, settings, copy, open, remove, clear } = useClipboard()
 
-// 最近图片来自常驻的 collect 状态（collectBridge 已在岛入口订阅）
-const recentImages = clipImages
+// 最近图片的展示已移除（改在「常用图片」页 Ctrl+V 保存），这里只留常量说明位置
 
 const keyword = ref('')
 const copiedId = ref(null)
@@ -186,28 +170,27 @@ async function openItem(it) {
   showToast('已在浏览器打开')
 }
 
-// 最近图片：点一下把**图片**写进系统剪贴板（可直接粘到任何窗口）
-async function copyRecent(m) {
+// 快捷复制：复制标准化后的内容（标准地址 / 纯号码 / 纯单号），条目原文不动
+async function copyQuick(it) {
   const api = typeof window !== 'undefined' ? window.api : null
-  if (!api || !api.clipCopy) return
-  const ok = await api.clipCopy({ kind: 'image', id: m.id })
+  if (!api || !api.clipCopy || !it || !it.quick) return
+  const ok = await api.clipCopy({ text: it.quick })
   if (!ok) return
   sfx.tick()
-  flashCopied(m.id)
-  showToast('已复制图片，可直接粘贴')
+  flashCopied(it.id)
+  showToast(`已复制${it.quickLabel || '标准格式'}`)
 }
 
-// ☆：收进常用图片（错过岛上提示条时的补收入口）
-async function starRecent(m) {
-  const api = typeof window !== 'undefined' ? window.api : null
-  if (!api || !api.clipStarImage || m.starred) return
-  const made = await api.clipStarImage(m.id)
-  if (!made) {
-    showToast('收藏失败，图片可能已被清理')
-    return
-  }
-  sfx.tick()
-  showToast('已收进常用图片')
+// 类型标签与图标：目前识别 链接 / 电话 / 快递单号 / 地址（姓名+电话+地址）
+const TYPE_LABEL = { link: '链接', phone: '电话', express: '快递单号', address: '地址' }
+const typeLabel = (it) => TYPE_LABEL[it && it.kind] || ''
+function kindIcon(it) {
+  if (!it) return 'clipboard'
+  if (it.kind === 'link') return 'link'
+  if (it.kind === 'phone') return 'target'
+  if (it.kind === 'express') return 'package'
+  if (it.kind === 'address') return 'window'
+  return 'clipboard'
 }
 
 function removeItem(id) {
@@ -412,6 +395,14 @@ onUnmounted(() => {
   justify-content: center;
   transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
+/* 「快捷复制」按钮：复制的是标准化后的内容，用强调色区分开 */
+.act.quick {
+  color: #bf5af2;
+}
+.act.quick:hover {
+  background: rgba(191, 90, 242, 0.22);
+}
+
 .act-ico {
   width: 12px;
   height: 12px;
@@ -556,6 +547,7 @@ onUnmounted(() => {
   padding: 8px 16px 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
+  background: linear-gradient(to bottom, transparent, #000);
 }
 .foot-label {
   display: inline-flex;
@@ -627,86 +619,4 @@ onUnmounted(() => {
   transform: translateX(30px);
 }
 
-/* ---------- 最近图片（临时池） ---------- */
-.recent {
-  flex-shrink: 0;
-  padding: 0 8px 10px;
-}
-.recent-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 2px 6px;
-}
-.recent-title {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: rgba(245, 245, 247, 0.75);
-}
-.recent-hint {
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.32);
-}
-.recent-strip {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: none;
-}
-.recent-strip::-webkit-scrollbar {
-  display: none;
-}
-.recent-pic {
-  position: relative;
-  flex-shrink: 0;
-  width: 62px;
-  height: 46px;
-  border-radius: 9px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  cursor: pointer;
-  transition: border-color 0.15s ease, transform 0.15s ease;
-}
-.recent-pic:hover {
-  border-color: rgba(90, 200, 250, 0.55);
-  transform: translateY(-1px);
-}
-.recent-pic.copied {
-  border-color: rgba(48, 209, 88, 0.65);
-}
-.recent-pic.saved {
-  border-color: rgba(255, 214, 10, 0.4);
-}
-.recent-pic img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.recent-star {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.55);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 11px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease, color 0.15s ease;
-}
-.recent-pic:hover .recent-star,
-.recent-star.on {
-  opacity: 1;
-}
-.recent-star.on {
-  color: #ffd60a;
-}
 </style>
