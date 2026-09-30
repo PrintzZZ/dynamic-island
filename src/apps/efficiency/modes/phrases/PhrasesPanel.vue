@@ -1,98 +1,187 @@
 <template>
   <div class="phrases-app">
     <div class="toolbar">
-      <div class="title">
-        常用语
-        <span v-if="phrases.length" class="count">{{ phrases.length }}</span>
+      <div class="seg">
+        <button :class="{ on: view === 'text' }" @click="view = 'text'">
+          常用语<span v-if="phrases.length">{{ phrases.length }}</span>
+        </button>
+        <button :class="{ on: view === 'image' }" @click="view = 'image'">
+          图片<span v-if="images.length">{{ images.length }}</span>
+        </button>
       </div>
-    </div>
-
-    <!-- 快捷添加 -->
-    <div class="add-bar">
-      <input
-        v-model="draft"
-        class="add-input"
-        placeholder="输入常用语，回车添加…"
-        @keydown.enter="submit"
-      />
-      <button class="add-btn" title="添加" @click="submit">
+      <button v-if="view === 'image'" class="add-btn" title="导入图片" @click="pick">
         <Icon name="plus" class="add-ico" />
       </button>
     </div>
 
-    <div v-if="phrases.length" class="list">
-      <TransitionGroup name="phrase">
-        <div
-          v-for="p in phrases"
-          :key="p.id"
-          class="phrase-item"
-          :class="{ copied: copiedId === p.id }"
-          title="点击复制"
-          @click="copy(p)"
-        >
-          <span class="text">{{ p.text }}</span>
-          <Transition name="pop">
-            <span v-if="copiedId === p.id" class="copied-tag">
-              <Icon name="check" class="copied-ico" />已复制
-            </span>
-          </Transition>
-          <button class="del" title="删除" @click.stop="removePhrase(p.id)">
-            <Icon name="close" class="del-ico" />
-          </button>
-        </div>
-      </TransitionGroup>
+    <div class="search-bar">
+      <input
+        v-model="q"
+        class="add-input"
+        :placeholder="view === 'text' ? '搜索常用语…' : '搜索图片…'"
+      />
     </div>
 
-    <div v-else class="empty">
-      <div class="empty-icon">
-        <Icon name="quote" class="empty-ico" />
+    <!-- ---------- 常用语 ---------- -->
+    <template v-if="view === 'text'">
+      <div class="add-bar">
+        <input
+          v-model="draft"
+          class="add-input"
+          placeholder="输入常用语，回车添加…"
+          @keydown.enter="submit"
+        />
+        <button class="add-btn" title="添加" @click="submit">
+          <Icon name="plus" class="add-ico" />
+        </button>
       </div>
-      <div class="empty-text">还没有常用语</div>
-      <div class="empty-hint">在上方输入框添加，点击条目即可复制</div>
-    </div>
+
+      <div v-if="shownText.length" class="list">
+        <TransitionGroup name="phrase">
+          <div
+            v-for="p in shownText"
+            :key="p.id"
+            class="phrase-item"
+            :class="{ copied: copiedId === p.id }"
+            title="点击复制"
+            @click="copy(p)"
+          >
+            <span class="text">{{ p.text }}</span>
+            <Transition name="pop">
+              <span v-if="copiedId === p.id" class="copied-tag">
+                <Icon name="check" class="copied-ico" />已复制
+              </span>
+            </Transition>
+            <button class="del" title="删除" @click.stop="remove(p.id)">
+              <Icon name="close" class="del-ico" />
+            </button>
+          </div>
+        </TransitionGroup>
+      </div>
+
+      <div v-else class="empty">
+        <div class="empty-icon"><Icon name="quote" class="empty-ico" /></div>
+        <div class="empty-text">{{ phrases.length ? '没有匹配的常用语' : '还没有常用语' }}</div>
+        <div class="empty-hint">
+          {{ phrases.length ? '换个关键词试试' : '在上方输入框添加，点击条目即可复制' }}
+        </div>
+      </div>
+    </template>
+
+    <!-- ---------- 常用图片：点一下就复制图片，直接粘到别的窗口 ---------- -->
+    <template v-else>
+      <div v-if="shownImages.length" class="pic-grid">
+        <button
+          v-for="m in shownImages"
+          :key="m.id"
+          class="pic"
+          :class="{ copied: copiedId === m.id }"
+          :title="`${m.name}｜点击复制图片`"
+          @click="copyImage(m)"
+        >
+          <img :src="thumbUrl(m.id)" :alt="m.name" loading="lazy" />
+          <span v-if="copiedId === m.id" class="pic-badge copied">
+            <Icon name="check" class="copied-ico" />已复制
+          </span>
+          <span v-else-if="m.favorite" class="pic-star">★</span>
+        </button>
+      </div>
+
+      <div v-else class="empty">
+        <div class="empty-icon"><Icon name="grid" class="empty-ico" /></div>
+        <div class="empty-text">{{ images.length ? '没有匹配的图片' : '还没有常用图片' }}</div>
+        <div class="empty-hint">
+          {{ images.length ? '换个关键词试试' : '点右上角 ＋ 导入，或在设置里管理' }}
+        </div>
+      </div>
+    </template>
+
+    <Transition name="pop">
+      <div v-if="toast" class="toast">✓ {{ toast }}</div>
+    </Transition>
   </div>
 </template>
 
 <script setup>
-import { ref, onUnmounted } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import Icon from '../../../../components/Icon.vue'
-import { usePhrases } from './usePhrases'
+import {
+  addPhrase,
+  filterCollect,
+  images,
+  phrases,
+  pickImages,
+  removePhrase,
+  sortCollect,
+  thumbUrl,
+  useImage,
+  usePhrase,
+} from './usePhrases'
 import { sfx } from '../../../../utils/sound'
 
-const { phrases, addPhrase, removePhrase } = usePhrases()
-
+const view = ref('text')
+const q = ref('')
 const draft = ref('')
 const copiedId = ref(null)
+const toast = ref('')
 let copiedTimer = null
+let toastTimer = null
+
+const shownText = computed(() => sortCollect(filterCollect(phrases.value, { q: q.value })))
+const shownImages = computed(() => sortCollect(filterCollect(images.value, { q: q.value })))
+
+function flash(id, msg) {
+  copiedId.value = id
+  if (copiedTimer) clearTimeout(copiedTimer)
+  copiedTimer = setTimeout(() => {
+    copiedId.value = null
+  }, 1600)
+  if (msg) {
+    toast.value = msg
+    if (toastTimer) clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => {
+      toast.value = ''
+    }, 1600)
+  }
+}
 
 function submit() {
-  if (!draft.value.trim()) return
-  addPhrase(draft.value)
+  const t = draft.value.trim()
+  if (!t) return
+  addPhrase(t)
   draft.value = ''
 }
 
+// 点击 = 直接复制 + 计数（方案第 23、26 条：不弹确认）
 async function copy(p) {
-  try {
-    if (window.api && window.api.copyText) {
-      await window.api.copyText(p.text)
-    } else {
-      await navigator.clipboard.writeText(p.text)
-    }
-    sfx.tick()
-    copiedId.value = p.id
-    if (copiedTimer) clearTimeout(copiedTimer)
-    copiedTimer = setTimeout(() => {
-      copiedId.value = null
-    }, 1200)
-  } catch {
-    // 复制失败时静默忽略
-  }
+  const ok = await usePhrase(p.id)
+  if (!ok) return
+  sfx.tick()
+  flash(p.id, '已复制到剪贴板')
+}
+
+async function copyImage(m) {
+  const ok = await useImage(m.id)
+  if (!ok) return
+  sfx.tick()
+  flash(m.id, '已复制图片，可直接粘贴')
+}
+
+async function remove(id) {
+  await removePhrase(id)
+}
+
+async function pick() {
+  const r = await pickImages()
+  if (r && r.ok) flash(null, `已导入 ${r.added ? r.added.length : 0} 张`)
 }
 
 onUnmounted(() => {
   if (copiedTimer) clearTimeout(copiedTimer)
+  if (toastTimer) clearTimeout(toastTimer)
 })
 </script>
+
 
 <style scoped>
 .phrases-app {
@@ -317,5 +406,119 @@ onUnmounted(() => {
 .phrase-leave-to {
   opacity: 0;
   transform: translateX(30px);
+}
+
+/* ---------- 常用语 / 图片 两个子页签 ---------- */
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.seg button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.seg button:hover {
+  color: #f5f5f7;
+}
+.seg button.on {
+  background: rgba(255, 255, 255, 0.14);
+  color: #f5f5f7;
+  font-weight: 600;
+}
+.seg button span {
+  font-size: 10px;
+  opacity: 0.5;
+}
+
+.search-bar {
+  padding: 0 8px 8px;
+  flex-shrink: 0;
+}
+
+/* ---------- 常用图片：小瀑布流，点一下直接复制图片 ---------- */
+.pic-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+  column-width: 96px;
+  column-gap: 8px;
+}
+.pic {
+  position: relative;
+  display: block;
+  width: 100%;
+  break-inside: avoid;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.pic:hover {
+  border-color: rgba(90, 200, 250, 0.5);
+  transform: translateY(-1px);
+}
+.pic.copied {
+  border-color: rgba(48, 209, 88, 0.6);
+}
+.pic img {
+  width: 100%;
+  display: block;
+}
+.pic-star {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  font-size: 11px;
+  color: #ffd60a;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.pic-badge {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #30d158;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* 底部轻提示（方案第 24 条） */
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f5f5f7;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.phrases-app {
+  position: relative;
 }
 </style>

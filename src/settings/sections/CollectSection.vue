@@ -1,0 +1,576 @@
+<template>
+  <div class="collect">
+    <!-- ---------- 顶部：子页签 + 工具栏 ---------- -->
+    <div class="cl-bar">
+      <div class="cl-seg">
+        <button :class="{ on: view === 'phrases' }" @click="view = 'phrases'">
+          常用语<em>{{ phrases.length }}</em>
+        </button>
+        <button :class="{ on: view === 'images' }" @click="view = 'images'">
+          常用图片<em>{{ images.length }}</em>
+        </button>
+      </div>
+      <div class="cl-tools">
+        <input v-model="q" class="cl-input cl-search" placeholder="搜索…" />
+        <select v-model="category" class="cl-input cl-sel">
+          <option value="">全部分类</option>
+          <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
+        </select>
+        <select v-model="sortMode" class="cl-input cl-sel">
+          <option value="smart">置顶 · 频率 · 最近</option>
+          <option value="count">按使用频率</option>
+          <option value="recent">按最近使用</option>
+        </select>
+        <button v-if="view === 'images'" class="st-btn primary" @click="doImport">导入图片</button>
+      </div>
+    </div>
+
+    <!-- ---------- 常用语 ---------- -->
+    <template v-if="view === 'phrases'">
+      <div class="cl-add">
+        <input
+          v-model="draft"
+          class="cl-input cl-grow"
+          placeholder="输入常用语，回车添加（分类可不选）"
+          @keydown.enter="add"
+        />
+        <select v-model="draftCat" class="cl-input cl-sel">
+          <option value="">未分类</option>
+          <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
+        </select>
+        <button class="st-btn primary" :disabled="!draft.trim()" @click="add">添加</button>
+      </div>
+
+      <div v-if="!list.length" class="cl-empty">
+        {{ phrases.length ? '没有匹配的常用语' : '还没有常用语，上面输入框回车即可添加' }}
+      </div>
+
+      <div v-else class="cl-list">
+        <div v-for="p in list" :key="p.id" class="cl-row">
+          <button class="cl-star" :class="{ on: p.favorite }" :title="p.favorite ? '取消置顶' : '置顶'" @click="toggleFav(p)">
+            {{ p.favorite ? '★' : '☆' }}
+          </button>
+          <div class="cl-body" title="点击复制到剪贴板" @click="copyPhrase(p)">
+            <template v-if="editing === p.id">
+              <input
+                v-model="editText"
+                class="cl-input cl-grow"
+                @keydown.enter="saveEdit(p)"
+                @keydown.esc="editing = ''"
+                @click.stop
+              />
+            </template>
+            <template v-else>
+              <div class="cl-text">{{ p.text }}</div>
+            </template>
+            <div class="cl-meta">
+              <span v-if="p.category" class="st-chip static">{{ p.category }}</span>
+              <span>用过 {{ p.useCount || 0 }} 次</span>
+              <span v-if="p.lastUsedAt">最近 {{ rel(p.lastUsedAt) }}</span>
+            </div>
+          </div>
+          <div class="cl-acts">
+            <template v-if="editing === p.id">
+              <button class="st-btn primary" @click="saveEdit(p)">保存</button>
+              <button class="st-btn ghost" @click="editing = ''">取消</button>
+            </template>
+            <template v-else>
+              <select
+                class="cl-input cl-sel cl-cat"
+                :value="p.category || ''"
+                @change="setCategory(p, $event.target.value)"
+              >
+                <option value="">未分类</option>
+                <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
+              </select>
+              <button class="st-btn ghost" @click="startEdit(p)">编辑</button>
+              <button class="st-btn danger" @click="del(p)">删除</button>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ---------- 常用图片（瀑布流，像 Eagle） ---------- -->
+    <template v-else>
+      <div v-if="!list.length" class="cl-empty">
+        {{ images.length ? '没有匹配的图片' : '还没有常用图片 —— 点「导入图片」，或在岛内剪贴板里给图片点 ☆' }}
+      </div>
+
+      <div v-else class="wf">
+        <figure v-for="m in list" :key="m.id" class="wf-item">
+          <div class="wf-pic" title="点击复制图片到剪贴板" @click="copyImage(m)">
+            <img :src="thumbUrl(m.id)" :alt="m.name" loading="lazy" />
+            <button
+              class="wf-star"
+              :class="{ on: m.favorite }"
+              :title="m.favorite ? '取消置顶' : '置顶'"
+              @click.stop="toggleFav(m)"
+            >
+              {{ m.favorite ? '★' : '☆' }}
+            </button>
+            <div class="wf-hover">
+              <span>点击复制</span>
+            </div>
+          </div>
+          <figcaption>
+            <input
+              v-if="editing === m.id"
+              v-model="editText"
+              class="cl-input cl-name-edit"
+              @keydown.enter="saveEdit(m)"
+              @keydown.esc="editing = ''"
+              @blur="saveEdit(m)"
+            />
+            <div v-else class="wf-name" :title="m.name" @dblclick="startEdit(m)">{{ m.name }}</div>
+            <div class="wf-meta">
+              <span v-if="m.w">{{ m.w }}×{{ m.h }}</span>
+              <span>用过 {{ m.useCount || 0 }} 次</span>
+            </div>
+            <div class="wf-acts">
+              <select
+                class="cl-input cl-sel cl-cat"
+                :value="m.category || ''"
+                @change="setCategory(m, $event.target.value)"
+              >
+                <option value="">未分类</option>
+                <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
+              </select>
+              <button class="st-btn ghost" @click="startEdit(m)">改名</button>
+              <button class="st-btn danger" @click="del(m)">删除</button>
+            </div>
+          </figcaption>
+        </figure>
+      </div>
+    </template>
+
+    <transition name="cl-fade">
+      <div v-if="toast" class="cl-toast">✓ {{ toast }}</div>
+    </transition>
+  </div>
+</template>
+
+<script setup>
+import { computed, onMounted, ref } from 'vue'
+import {
+  CATEGORIES,
+  filterCollect,
+  images,
+  initCollectState,
+  phrases,
+  removeImage,
+  removePhrase,
+  sortCollect,
+  thumbUrl,
+  updateImage,
+  updatePhrase,
+  useImage,
+  usePhrase,
+  pickImages,
+  addPhrase,
+} from '../../composables/useCollect'
+
+const view = ref('phrases')
+const q = ref('')
+const category = ref('')
+const sortMode = ref('smart')
+
+const draft = ref('')
+const draftCat = ref('')
+const editing = ref('')
+const editText = ref('')
+const toast = ref('')
+let toastTimer = null
+
+function say(msg) {
+  toast.value = msg
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    toast.value = ''
+  }, 1600)
+}
+
+const source = computed(() => (view.value === 'phrases' ? phrases.value : images.value))
+const list = computed(() => sortCollect(filterCollect(source.value, { q: q.value, category: category.value }), sortMode.value))
+
+function rel(ts) {
+  const d = Date.now() - Number(ts || 0)
+  if (d < 60000) return '刚刚'
+  if (d < 3600000) return `${Math.floor(d / 60000)} 分钟前`
+  if (d < 86400000) return `${Math.floor(d / 3600000)} 小时前`
+  return `${Math.floor(d / 86400000)} 天前`
+}
+
+async function add() {
+  const t = draft.value.trim()
+  if (!t) return
+  await addPhrase(t, draftCat.value)
+  draft.value = ''
+  say('已添加')
+}
+
+function startEdit(item) {
+  editing.value = item.id
+  editText.value = item.text || item.name || ''
+}
+
+async function saveEdit(item) {
+  const v = editText.value.trim()
+  if (!v) {
+    editing.value = ''
+    return
+  }
+  if (item.text !== undefined) await updatePhrase(item.id, { text: v })
+  else await updateImage(item.id, { name: v })
+  editing.value = ''
+  say('已保存')
+}
+
+async function toggleFav(item) {
+  const patch = { favorite: !item.favorite }
+  if (item.text !== undefined) await updatePhrase(item.id, patch)
+  else await updateImage(item.id, patch)
+}
+
+async function setCategory(item, cat) {
+  if (item.text !== undefined) await updatePhrase(item.id, { category: cat })
+  else await updateImage(item.id, { category: cat })
+}
+
+async function copyPhrase(p) {
+  if (editing.value === p.id) return
+  const ok = await usePhrase(p.id)
+  say(ok ? '已复制到剪贴板' : '复制失败')
+}
+
+async function copyImage(m) {
+  const ok = await useImage(m.id)
+  say(ok ? '已复制图片，可直接粘贴' : '复制失败')
+}
+
+async function del(item) {
+  const isImage = item.text === undefined
+  // 不用 window.prompt/confirm：Electron 里这些原生弹窗会被静音或直接不可用
+  if (!confirming.value || confirming.value !== item.id) {
+    confirming.value = item.id
+    say(isImage ? '再点一次删除这张图片' : '再点一次删除这条常用语')
+    setTimeout(() => {
+      if (confirming.value === item.id) confirming.value = ''
+    }, 2600)
+    return
+  }
+  confirming.value = ''
+  if (isImage) await removeImage(item.id)
+  else await removePhrase(item.id)
+  say('已删除')
+}
+const confirming = ref('')
+
+async function doImport() {
+  const r = await pickImages()
+  if (r && r.ok) say(`已导入 ${r.added ? r.added.length : 0} 张`)
+}
+
+onMounted(() => {
+  initCollectState()
+})
+</script>
+
+<style scoped>
+.collect {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 20px;
+}
+
+/* ---------- 顶部条 ---------- */
+.cl-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cl-seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--st-fill, rgba(255, 255, 255, 0.06));
+}
+.cl-seg button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--st-text-2, rgba(255, 255, 255, 0.6));
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.cl-seg button:hover {
+  color: var(--st-text, #fff);
+}
+.cl-seg button.on {
+  background: var(--st-card, rgba(255, 255, 255, 0.12));
+  color: var(--st-text, #fff);
+  font-weight: 600;
+}
+.cl-seg em {
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.55;
+}
+.cl-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---------- 输入控件 ---------- */
+.cl-input {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--st-line, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  background: var(--st-field, rgba(255, 255, 255, 0.05));
+  color: var(--st-text, #fff);
+  font-size: 12.5px;
+  outline: none;
+}
+.cl-input:focus {
+  border-color: rgba(90, 200, 250, 0.55);
+}
+.cl-search {
+  width: 180px;
+}
+.cl-sel {
+  padding-right: 6px;
+  cursor: pointer;
+}
+.cl-grow {
+  flex: 1;
+  min-width: 160px;
+}
+.cl-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- 常用语列表 ---------- */
+.cl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--st-line, rgba(255, 255, 255, 0.1));
+  border-radius: 10px;
+  background: var(--st-card, rgba(255, 255, 255, 0.04));
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.cl-row:hover {
+  background: var(--st-card-hover, rgba(255, 255, 255, 0.07));
+}
+.cl-star {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cl-star:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.cl-star.on {
+  color: #ffd60a;
+}
+.cl-body {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.cl-text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--st-text, #fff);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+.cl-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--st-text-3, rgba(255, 255, 255, 0.38));
+}
+.cl-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.cl-cat {
+  height: 26px;
+  font-size: 11.5px;
+}
+
+/* ---------- 图片瀑布流（Eagle 那种：图片为主、信息克制） ---------- */
+.wf {
+  column-width: 210px;
+  column-gap: 12px;
+}
+.wf-item {
+  break-inside: avoid;
+  margin: 0 0 12px;
+  border: 1px solid var(--st-line, rgba(255, 255, 255, 0.1));
+  border-radius: 12px;
+  background: var(--st-card, rgba(255, 255, 255, 0.04));
+  overflow: hidden;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.wf-item:hover {
+  border-color: rgba(90, 200, 250, 0.45);
+}
+.wf-pic {
+  position: relative;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.25);
+  line-height: 0;
+}
+.wf-pic img {
+  width: 100%;
+  display: block;
+}
+.wf-star {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.wf-item:hover .wf-star,
+.wf-star.on {
+  opacity: 1;
+}
+.wf-star.on {
+  color: #ffd60a;
+}
+.wf-hover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+.wf-pic:hover .wf-hover {
+  opacity: 1;
+}
+.wf-item figcaption {
+  padding: 8px 10px 9px;
+}
+.wf-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--st-text, #fff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+.cl-name-edit {
+  width: 100%;
+  height: 24px;
+  font-size: 12.5px;
+}
+.wf-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--st-text-3, rgba(255, 255, 255, 0.38));
+}
+.wf-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.wf-item:hover .wf-acts {
+  opacity: 1;
+}
+.wf-acts .cl-cat {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- 空态与提示 ---------- */
+.cl-empty {
+  padding: 40px 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--st-text-3, rgba(255, 255, 255, 0.35));
+}
+.cl-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 12.5px;
+  pointer-events: none;
+}
+.cl-fade-enter-active,
+.cl-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.cl-fade-enter-from,
+.cl-fade-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 6px);
+}
+</style>

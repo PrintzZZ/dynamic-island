@@ -92,6 +92,7 @@ import GeneralSection from './sections/GeneralSection.vue'
 import AppearanceSection from './sections/AppearanceSection.vue'
 import BehaviorSection from './sections/BehaviorSection.vue'
 import AppsSection from './sections/AppsSection.vue'
+import CollectSection from './sections/CollectSection.vue'
 import AboutSection from './sections/AboutSection.vue'
 import {
   hydrate,
@@ -106,6 +107,7 @@ const TABS = [
   { id: 'appearance', name: '外观', icon: 'palette', comp: AppearanceSection, sub: '调整灵动岛的视觉表现' },
   { id: 'behavior', name: '行为', icon: 'cursor', comp: BehaviorSection, sub: '控制灵动岛的展开、收起与通知方式' },
   { id: 'apps', name: '应用', icon: 'grid', comp: AppsSection, sub: '管理灵动岛中的功能模块' },
+  { id: 'collect', name: '常用', icon: 'quote', comp: CollectSection, sub: '常用语与常用图片：管理、分类、置顶、统计' },
   { id: 'about', name: '关于', icon: 'info', comp: AboutSection, sub: '' },
 ]
 

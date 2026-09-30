@@ -18,6 +18,7 @@ const path = require('path')
 import * as mbox from './materialbox.js'
 import * as settings from './settings.js'
 import * as music from './music/index.js'
+import * as collect from './collect.js'
 
 // 允许渲染进程在无用户手势下播放 Web Audio 音效
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
@@ -142,128 +143,10 @@ function netStop() {
   }
 }
 
-// ---------- 剪贴板历史 ----------
-// 轮询 system clipboard，做去重 + 上限的历史队列；识别出 http(s) 链接时
-// 一并把 url 存进条目，渲染进程据此在右侧给出「一键跳转」按钮。
-const CLIP_POLL_MS = 700
-// 上限与总开关都来自设置面板，所以做成函数而不是常量
-const clipMax = () => settings.load().clipboardLimit
-const clipOn = () => settings.load().clipboardEnabled
-let clipItems = []
-let clipLast = ''
-let clipTimer = null
-let clipSaveTimer = null
-
-function clipStorePath() {
-  return path.join(app.getPath('userData'), 'clipboard-history.json')
-}
-
-function clipLoad() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(clipStorePath(), 'utf8'))
-    if (Array.isArray(raw)) {
-      clipItems = raw
-        .filter((x) => x && typeof x.text === 'string')
-        .slice(0, clipMax())
-        .map((x) => ({
-          id: String(x.id || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
-          text: x.text,
-          url: typeof x.url === 'string' ? x.url : clipExtractUrl(x.text),
-          at: Number(x.at) || Date.now(),
-        }))
-    }
-  } catch {
-    clipItems = []
-  }
-}
-
-function clipWriteNow() {
-  try {
-    fs.writeFileSync(clipStorePath(), JSON.stringify(clipItems))
-  } catch (err) {
-    console.error('保存剪贴板历史失败：', err)
-  }
-}
-
-// 退出前强制落盘，避免最后 400ms 内的复制记录丢失
-function clipFlush() {
-  if (clipSaveTimer) {
-    clearTimeout(clipSaveTimer)
-    clipSaveTimer = null
-  }
-  clipWriteNow()
-}
-
-function clipSave() {
-  if (clipSaveTimer) return
-  clipSaveTimer = setTimeout(() => {
-    clipSaveTimer = null
-    clipWriteNow()
-  }, 400)
-}
-
-// 取文本里第一个 http(s) 链接，并剥掉结尾常见的标点
-function clipExtractUrl(text) {
-  const m = String(text || '').match(/https?:\/\/[^\s<>"'`]+/i)
-  if (!m) return null
-  const url = m[0].replace(/[.,;:!?，。；：！？）)】\]}》>'"”’]+$/, '')
-  return url || null
-}
-
-function clipPush(text) {
-  const t = String(text || '').trim()
-  if (!t) return
-  const dup = clipItems.findIndex((x) => x.text === t)
-  // 重复内容：move-top 把它提到最前并刷新时间；ignore 直接丢弃这次复制
-  if (dup !== -1) {
-    if (settings.load().clipDedupe === 'ignore') return
-    clipItems.splice(dup, 1)
-  }
-  const item = {
-    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-    text: t,
-    url: clipExtractUrl(t),
-    at: Date.now(),
-  }
-  clipItems.unshift(item)
-  if (clipItems.length > clipMax()) clipItems.length = clipMax()
-  clipSave()
-  if (win && !win.isDestroyed()) win.webContents.send('clipboard:new', item)
-}
-
-function clipPoll() {
-  if (!clipOn()) return
-  let text = ''
-  try {
-    text = clipboard.readText()
-  } catch {
-    return
-  }
-  if (!text || text === clipLast) return
-  clipLast = text
-  clipPush(text)
-}
-
-function clipStart() {
-  if (clipTimer) return
-  clipTimer = setInterval(clipPoll, CLIP_POLL_MS)
-}
-
-function clipStop() {
-  if (!clipTimer) return
-  clearInterval(clipTimer)
-  clipTimer = null
-}
-
-// 设置面板改了开关/上限后立即生效
-function clipReconfigure() {
-  if (!clipOn()) return clipStop()
-  clipStart()
-  if (clipItems.length > clipMax()) {
-    clipItems.length = clipMax()
-    clipSave()
-  }
-}
+// ---------- 剪贴板 / 常用 ----------
+// 剪贴板历史与「常用」（常用语 + 常用图片）都搬到了 collect.js：
+// 那边负责原生剪贴板事件监听、图片落文件、缩略图、以及 userData/data/** 的存储布局。
+// 这里只保留窗口侧的接线。
 
 // 取窗口所在显示器的可用区域（支持多显示器拖拽）
 function workAreaFor(target) {
@@ -401,6 +284,9 @@ function createSettingsWindow() {
   } else {
     settingsWin.loadFile(path.join(__dirname, '../dist/settings.html'))
   }
+
+  // 让 collect 也能把变更推给设置窗口
+  collect.attachCollectWindows(win, settingsWin)
 
   settingsWin.once('ready-to-show', () => {
     settingsWin.show()
@@ -544,14 +430,12 @@ app.whenReady().then(() => {
 
   createWindow()
 
-  // 剪贴板历史：先读磁盘缓存，再以当前剪贴板为基准监听"新复制"
-  clipLoad()
-  try {
-    clipLast = clipboard.readText()
-  } catch {
-    clipLast = ''
-  }
-  clipReconfigure()
+  // 剪贴板 + 常用：加载数据、登记 collect:// 协议、接线两个窗口、开始监听
+  collect.initCollect()
+  collect.registerCollectProtocol()
+  collect.attachCollectWindows(win)
+  collect.registerCollectIpc()
+  collect.startClipboardWatch()
 
   // 材料箱：加载 userData/material-box.json，并校验一次文件路径是否还有效
   mbox.init(win)
@@ -595,51 +479,7 @@ app.whenReady().then(() => {
     else if (!netWanted) netStop()
   })
 
-  // 剪贴板历史：读取 / 复制 / 打开链接 / 删除 / 清空
-  ipcMain.handle('clipboard:get', () => clipItems)
-
-  ipcMain.handle('clipboard:copy', (e, text) => {
-    const t = String(text || '')
-    if (!t) return false
-    clipboard.writeText(t)
-    // 同步基准值，避免这次"程序内复制"又被轮询当成新记录
-    clipLast = t
-    const idx = clipItems.findIndex((x) => x.text === t.trim())
-    if (idx > 0) {
-      const [item] = clipItems.splice(idx, 1)
-      item.at = Date.now()
-      clipItems.unshift(item)
-      clipSave()
-    }
-    return true
-  })
-
-  // 一键跳转：只放行 http(s)，避免被当成任意协议的命令执行
-  ipcMain.handle('clipboard:open', (e, url) => {
-    let parsed
-    try {
-      parsed = new URL(String(url || ''))
-    } catch {
-      return false
-    }
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
-    shell.openExternal(parsed.toString())
-    return true
-  })
-
-  ipcMain.handle('clipboard:remove', (e, id) => {
-    const i = clipItems.findIndex((x) => x.id === id)
-    if (i === -1) return false
-    clipItems.splice(i, 1)
-    clipSave()
-    return true
-  })
-
-  ipcMain.handle('clipboard:clear', () => {
-    clipItems = []
-    clipSave()
-    return true
-  })
+  // 剪贴板与常用（含图片）的 IPC 在 collect.initCollect 那一段统一注册（只会注册一次）
 
   // ---------- 材料箱 ----------
   // Renderer 只拿「路径 + 元数据」，所有真实文件操作都在这里完成
@@ -670,7 +510,7 @@ app.whenReady().then(() => {
 
   // 快捷复制：走 Electron 剪贴板，规避渲染进程焦点/权限限制
   ipcMain.handle('island:copy-text', (e, text) => {
-    clipboard.writeText(String(text))
+    collect.writeClipboardText(String(text))
     return true
   })
 
@@ -683,15 +523,14 @@ app.whenReady().then(() => {
     const next = settings.set(patch || {})
     // 上限变小要立刻裁掉多余历史；开关切换要立刻起停轮询
     if ('clipboardLimit' in (patch || {}) || 'clipboardEnabled' in (patch || {})) {
-      clipReconfigure()
-      if (win && !win.isDestroyed()) win.webContents.send('clipboard:changed')
+      collect.reconfigureClipboard()
     }
     sendSettingsChanged()
     return next
   })
   ipcMain.handle('settings:reset', () => {
     const next = settings.reset()
-    clipReconfigure()
+    collect.reconfigureClipboard()
     sendSettingsChanged()
     return next
   })
@@ -758,9 +597,9 @@ app.whenReady().then(() => {
       console.error('材料箱落盘失败：', err)
     }
     try {
-      clipFlush()
+      collect.disposeCollect()
     } catch (err) {
-      console.error('剪贴板落盘失败：', err)
+      console.error('收集层落盘失败：', err)
     }
   })
 

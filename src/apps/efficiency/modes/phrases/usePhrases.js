@@ -1,39 +1,4 @@
-import { ref, watch } from 'vue'
-
-const STORAGE_KEY = 'island.phrases.v1'
-
-function load() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []
-  } catch {
-    return []
-  }
-}
-
-// 模块级单例：多个组件共享同一份常用语数据
-const phrases = ref(load())
-
-watch(
-  phrases,
-  (val) => localStorage.setItem(STORAGE_KEY, JSON.stringify(val)),
-  { deep: true }
-)
-
-let seq = 0
-
-export function usePhrases() {
-  function addPhrase(text) {
-    const t = String(text || '').trim()
-    if (!t) return null
-    const phrase = { id: `${Date.now()}-${seq++}`, text: t }
-    phrases.value.unshift(phrase)
-    return phrase
-  }
-
-  function removePhrase(id) {
-    const i = phrases.value.findIndex((x) => x.id === id)
-    if (i !== -1) phrases.value.splice(i, 1)
-  }
-
-  return { phrases, addPhrase, removePhrase }
-}
+// 兼容转发：常用（常用语 + 常用图片）的状态与操作都在
+// src/composables/useCollect.js —— 它是共享层，设置窗口也会 import，
+// 而设置窗口刻意不依赖 src/apps/** 这棵应用树。
+export * from '../../../../composables/useCollect'

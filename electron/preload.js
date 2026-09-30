@@ -30,13 +30,40 @@ contextBridge.exposeInMainWorld('api', {
   setNetActive: (active) => ipcRenderer.send('net:set-active', active),
   onNetStats: (cb) => ipcRenderer.on('net:stats', (e, s) => cb(s)),
 
-  // 剪贴板历史
-  getClipboard: () => ipcRenderer.invoke('clipboard:get'),
-  copyClip: (text) => ipcRenderer.invoke('clipboard:copy', text),
-  openClipUrl: (url) => ipcRenderer.invoke('clipboard:open', url),
-  removeClip: (id) => ipcRenderer.invoke('clipboard:remove', id),
-  clearClip: () => ipcRenderer.invoke('clipboard:clear'),
+  // ---------- 剪贴板历史 + 常用（收集层 collect.js） ----------
+  // 一次拿全量快照：{ phrases, images, clip: { items, images } }
+  collectGet: () => ipcRenderer.invoke('collect:get'),
+  onCollectChanged: (cb) => ipcRenderer.on('collect:changed', (e, s) => cb(s)),
+
+  // 剪贴板（临时池）：文本 / 链接 / 图片
+  clipCopy: (payload) => ipcRenderer.invoke('collect:clip-copy', payload),
+  clipStarImage: (id) => ipcRenderer.invoke('collect:clip-star-image', id),
+  clipRemove: (payload) => ipcRenderer.invoke('collect:clip-remove', payload),
+  clipClear: () => ipcRenderer.invoke('collect:clip-clear'),
+  clipOpenUrl: (url) => ipcRenderer.invoke('collect:clip-open', url),
   onClipboardNew: (cb) => ipcRenderer.on('clipboard:new', (e, item) => cb(item)),
+
+  // 常用语
+  phraseAdd: (payload) => ipcRenderer.invoke('collect:phrase-add', payload),
+  phraseUpdate: (id, patch) => ipcRenderer.invoke('collect:phrase-update', id, patch),
+  phraseRemove: (id) => ipcRenderer.invoke('collect:phrase-remove', id),
+  phraseUse: (id) => ipcRenderer.invoke('collect:phrase-use', id),
+
+  // 常用图片：点一下就复制图片到系统剪贴板，粘到任何地方
+  imageUse: (id) => ipcRenderer.invoke('collect:image-use', id),
+  imageUpdate: (id, patch) => ipcRenderer.invoke('collect:image-update', id, patch),
+  imageRemove: (id) => ipcRenderer.invoke('collect:image-remove', id),
+  imagePick: () => ipcRenderer.invoke('collect:image-pick'),
+  imageImport: (paths) => ipcRenderer.invoke('collect:image-import', paths),
+  collectReveal: (p) => ipcRenderer.invoke('collect:reveal', p),
+  collectOpenDir: () => ipcRenderer.invoke('collect:open-dir'),
+
+  // 旧名保留：剪贴板面板还在用，指向同一套实现
+  getClipboard: () => ipcRenderer.invoke('collect:get').then((s) => (s && s.clip ? s.clip.items : [])),
+  copyClip: (text) => ipcRenderer.invoke('collect:clip-copy', { text }),
+  openClipUrl: (url) => ipcRenderer.invoke('collect:clip-open', url),
+  removeClip: (id) => ipcRenderer.invoke('collect:clip-remove', { id }),
+  clearClip: () => ipcRenderer.invoke('collect:clip-clear'),
 
   // 材料箱：Renderer 只传路径与元数据，真实文件操作全在主进程
   mboxPathForFile: (file) => pathForFile(file),
