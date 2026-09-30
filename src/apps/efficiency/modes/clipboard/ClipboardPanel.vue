@@ -32,7 +32,10 @@
           :title="it.url ? '点击复制 · 右侧可打开链接' : '点击复制'"
           @click="copyItem(it)"
         >
-          <div class="kind" :class="it.kind || 'text'">
+          <!-- 注意：这里用 data-kind 而不是 class —— 之前写成 class="kind text"，
+               结果撞上了下面给正文用的 .text 规则（display:-webkit-box + 行数截断），
+               把图标的 display:flex 覆盖掉，图标就错位了 -->
+          <div class="kind" :data-kind="it.kind || 'text'">
             <Icon :name="kindIcon(it)" class="kind-ico" />
           </div>
 
@@ -184,12 +187,13 @@ async function copyQuick(it) {
 // 类型标签与图标：目前识别 链接 / 电话 / 快递单号 / 地址（姓名+电话+地址）
 const TYPE_LABEL = { link: '链接', phone: '电话', express: '快递单号', address: '地址' }
 const typeLabel = (it) => TYPE_LABEL[it && it.kind] || ''
+// 类型图标：每种可快捷复制的信息都有自己的图标与配色（见下方 .kind[data-kind=...]）
 function kindIcon(it) {
   if (!it) return 'clipboard'
   if (it.kind === 'link') return 'link'
-  if (it.kind === 'phone') return 'target'
+  if (it.kind === 'phone') return 'phone'
   if (it.kind === 'express') return 'package'
-  if (it.kind === 'address') return 'window'
+  if (it.kind === 'address') return 'map-pin'
   return 'clipboard'
 }
 
@@ -350,9 +354,22 @@ onUnmounted(() => {
   justify-content: center;
   flex-shrink: 0;
 }
-.kind.link {
+/* 每种类型一个图标 + 一套配色（用 data-kind，避免和正文的 .text 规则撞名字） */
+.kind[data-kind='link'] {
   background: rgba(90, 200, 250, 0.16);
   color: #5ac8fa;
+}
+.kind[data-kind='phone'] {
+  background: rgba(48, 209, 88, 0.16);
+  color: #30d158;
+}
+.kind[data-kind='express'] {
+  background: rgba(255, 159, 10, 0.16);
+  color: #ff9f0a;
+}
+.kind[data-kind='address'] {
+  background: rgba(191, 90, 242, 0.18);
+  color: #bf5af2;
 }
 .kind-ico {
   width: 14px;
@@ -362,6 +379,7 @@ onUnmounted(() => {
   flex: 1;
   min-width: 0;
 }
+
 .text {
   font-size: 12.5px;
   line-height: 1.35;

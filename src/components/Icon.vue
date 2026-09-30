@@ -74,6 +74,16 @@
       <path d="M10.3 13.7a4.2 4.2 0 0 0 5.9 0l3-3a4.2 4.2 0 0 0-5.9-5.9l-1.5 1.5" />
       <path d="M13.7 10.3a4.2 4.2 0 0 0-5.9 0l-3 3a4.2 4.2 0 0 0 5.9 5.9l1.5-1.5" />
     </template>
+    <!-- 剪贴板条目类型：电话 / 地址（链接、快递分别复用 link、package） -->
+    <template v-else-if="name === 'phone'">
+      <path
+        d="M7 3.6h3l1.6 4-1.9 1.5a12 12 0 0 0 5.2 5.2l1.5-1.9 4 1.6v3a2 2 0 0 1-2.2 2A17 17 0 0 1 5 5.8 2 2 0 0 1 7 3.6z"
+      />
+    </template>
+    <template v-else-if="name === 'map-pin'">
+      <path d="M12 21.2s7-6.1 7-11.2a7 7 0 1 0-14 0c0 5.1 7 11.2 7 11.2z" />
+      <circle cx="12" cy="10" r="2.6" />
+    </template>
     <template v-else-if="name === 'external'">
       <path d="M14.2 4.6h5.2v5.2" />
       <path d="M19.4 4.6 11.6 12.4" />
