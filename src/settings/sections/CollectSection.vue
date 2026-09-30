@@ -11,7 +11,6 @@
         </button>
       </div>
       <div class="cl-tools">
-        <input v-model="q" class="cl-input cl-search" placeholder="搜索…" />
         <select v-model="category" class="cl-input cl-sel">
           <option value="">全部分类</option>
           <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
@@ -21,28 +20,33 @@
           <option value="count">按使用频率</option>
           <option value="recent">按最近使用</option>
         </select>
-        <button v-if="view === 'images'" class="st-btn primary" @click="doImport">导入图片</button>
       </div>
+    </div>
+
+    <!-- 搜索与新增合成一行：同一个输入框，有匹配就筛选，没匹配回车直接添加 -->
+    <div class="cl-add">
+      <input
+        ref="inputEl"
+        v-model="q"
+        class="cl-input cl-grow"
+        :placeholder="view === 'phrases' ? '搜索，或输入新的常用语…' : '搜索图片…'"
+        @keydown.enter="onEnter"
+        @keydown.esc="q = ''"
+      />
+      <select v-if="view === 'phrases'" v-model="draftCat" class="cl-input cl-sel" title="新常用语的分类">
+        <option value="">未分类</option>
+        <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
+      </select>
+      <button class="st-btn primary" @click="onPlus">
+        {{ view === 'phrases' ? '添加' : '导入图片' }}
+      </button>
     </div>
 
     <!-- ---------- 常用语 ---------- -->
     <template v-if="view === 'phrases'">
-      <div class="cl-add">
-        <input
-          v-model="draft"
-          class="cl-input cl-grow"
-          placeholder="输入常用语，回车添加（分类可不选）"
-          @keydown.enter="add"
-        />
-        <select v-model="draftCat" class="cl-input cl-sel">
-          <option value="">未分类</option>
-          <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
-        </select>
-        <button class="st-btn primary" :disabled="!draft.trim()" @click="add">添加</button>
-      </div>
-
       <div v-if="!list.length" class="cl-empty">
-        {{ phrases.length ? '没有匹配的常用语' : '还没有常用语，上面输入框回车即可添加' }}
+        <template v-if="q.trim()">没有匹配「{{ q.trim() }}」—— 回车即可添加为新常用语</template>
+        <template v-else>还没有常用语，在上方输入框输入后回车即可添加</template>
       </div>
 
       <div v-else class="cl-list">
@@ -94,7 +98,8 @@
     <!-- ---------- 常用图片（瀑布流，像 Eagle） ---------- -->
     <template v-else>
       <div v-if="!list.length" class="cl-empty">
-        {{ images.length ? '没有匹配的图片' : '还没有常用图片 —— 点「导入图片」，或在岛内剪贴板里给图片点 ☆' }}
+        <template v-if="q.trim()">没有匹配「{{ q.trim() }}」—— 换个关键词，或点「导入图片」</template>
+        <template v-else>还没有常用图片 —— 截图后点岛上提示条的 ☆，或点「导入图片」</template>
       </div>
 
       <div v-else class="wf">
@@ -175,8 +180,8 @@ const q = ref('')
 const category = ref('')
 const sortMode = ref('smart')
 
-const draft = ref('')
 const draftCat = ref('')
+const inputEl = ref(null)
 const editing = ref('')
 const editText = ref('')
 const toast = ref('')
@@ -201,12 +206,29 @@ function rel(ts) {
   return `${Math.floor(d / 86400000)} 天前`
 }
 
-async function add() {
-  const t = draft.value.trim()
+async function addNow(text) {
+  const t = String(text || '').trim()
   if (!t) return
   await addPhrase(t, draftCat.value)
-  draft.value = ''
+  q.value = ''
   say('已添加')
+}
+
+// 回车：**只在没搜到任何匹配时**才添加 —— 管理页上不该"搜着搜着就被改数据"。
+// 想明确新增就按「添加」按钮。
+async function onEnter() {
+  const v = q.value.trim()
+  if (!v || view.value !== 'phrases') return
+  if (list.value.length) return
+  await addNow(v)
+}
+
+// 「添加」按钮：常用语页新增当前输入；空输入时聚焦输入框；图片页导入本地图片
+async function onPlus() {
+  if (view.value === 'images') return doImport()
+  const v = q.value.trim()
+  if (v) return addNow(v)
+  inputEl.value && inputEl.value.focus()
 }
 
 function startEdit(item) {

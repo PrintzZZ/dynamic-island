@@ -417,7 +417,7 @@ function pushClipImage(img) {
     console.error('[collect] 写剪贴板图片失败', e && e.message)
     return null
   }
-  const item = { id, kind: 'image', file, w: size.width, h: size.height, at: Date.now() }
+  const item = { id, kind: 'image', file, w: size.width, h: size.height, at: Date.now(), starred: false }
   clipImages.unshift(item)
   if (clipImages.length > RECENT_IMAGES_MAX) {
     const dropped = clipImages.splice(RECENT_IMAGES_MAX)
@@ -732,11 +732,25 @@ function makeThumb(srcFile, id) {
 export function imageAddFromClipImage(clipId) {
   const item = clipImages.find((x) => x.id === clipId)
   if (!item || !fs.existsSync(item.file)) return null
+  if (item.starred) {
+    // 已经收藏过：直接返回既有那条，不重复导入
+    const exist = images.find((m) => m.name && m.fromClipId === clipId)
+    if (exist) return exist
+  }
   const d = new Date()
   const p2 = (n) => String(n).padStart(2, '0')
   // 手动拼时间：toLocaleString 的格式随系统变化，切片会切出「19:36:」这种尾巴
   const stamp = `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`
-  return imageImportOne(item.file, { name: `截图 ${stamp}` })
+  const made = imageImportOne(item.file, { name: `截图 ${stamp}` })
+  if (made) {
+    // 标记来源，并让面板把这张最近图片显示成已收藏（★）
+    made.fromClipId = clipId
+    item.starred = true
+    writeImagesMeta()
+    saveSoon()
+    broadcast()
+  }
+  return made
 }
 
 // 从任意本地图片文件收进常用图片

@@ -19,6 +19,35 @@
       </button>
     </div>
 
+    <!-- 最近图片（临时池，最多 10 张）：点一下复制图片，☆ 收进常用图片。
+         截图后如果错过了岛上那 3 秒提示条，可以在这里补收。 -->
+    <div v-if="recentImages.length" class="recent">
+      <div class="recent-head">
+        <span class="recent-title">最近图片</span>
+        <span class="recent-hint">{{ recentImages.length }}/10 · 点图即复制 · ★ 收进常用</span>
+      </div>
+      <div class="recent-strip">
+        <div
+          v-for="m in recentImages"
+          :key="m.id"
+          class="recent-pic"
+          :class="{ copied: copiedId === m.id, saved: m.starred }"
+          :title="`${m.w}×${m.h}｜点击复制图片`"
+          @click="copyRecent(m)"
+        >
+          <img :src="clipUrl(m.id)" alt="" />
+          <button
+            class="recent-star"
+            :class="{ on: m.starred }"
+            :title="m.starred ? '已在常用图片' : '收进常用图片'"
+            @click.stop="starRecent(m)"
+          >
+            {{ m.starred ? '★' : '☆' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="filtered.length" class="list">
       <TransitionGroup name="clip">
         <div
@@ -59,12 +88,12 @@
       </TransitionGroup>
     </div>
 
-    <div v-else class="empty">
+    <div v-else-if="!recentImages.length" class="empty">
       <div class="empty-icon">
         <Icon :name="keyword ? 'search' : 'clipboard'" class="empty-ico" />
       </div>
       <div class="empty-text">{{ keyword ? '没有匹配的记录' : '还没有剪贴板记录' }}</div>
-      <div class="empty-hint">复制任意内容后会自动出现在这里</div>
+      <div class="empty-hint">复制任意内容（文字或图片）后会自动出现在这里</div>
     </div>
 
     <div class="foot">
@@ -97,9 +126,13 @@
 import { computed, onUnmounted, ref } from 'vue'
 import Icon from '../../../../components/Icon.vue'
 import { useClipboard } from './useClipboard'
+import { clipImages, clipUrl } from '../../../../composables/useCollect'
 import { sfx } from '../../../../utils/sound'
 
 const { items, settings, copy, open, remove, clear } = useClipboard()
+
+// 最近图片来自常驻的 collect 状态（collectBridge 已在岛入口订阅）
+const recentImages = clipImages
 
 const keyword = ref('')
 const copiedId = ref(null)
@@ -151,6 +184,30 @@ async function openItem(it) {
   if (!ok) return
   sfx.tick()
   showToast('已在浏览器打开')
+}
+
+// 最近图片：点一下把**图片**写进系统剪贴板（可直接粘到任何窗口）
+async function copyRecent(m) {
+  const api = typeof window !== 'undefined' ? window.api : null
+  if (!api || !api.clipCopy) return
+  const ok = await api.clipCopy({ kind: 'image', id: m.id })
+  if (!ok) return
+  sfx.tick()
+  flashCopied(m.id)
+  showToast('已复制图片，可直接粘贴')
+}
+
+// ☆：收进常用图片（错过岛上提示条时的补收入口）
+async function starRecent(m) {
+  const api = typeof window !== 'undefined' ? window.api : null
+  if (!api || !api.clipStarImage || m.starred) return
+  const made = await api.clipStarImage(m.id)
+  if (!made) {
+    showToast('收藏失败，图片可能已被清理')
+    return
+  }
+  sfx.tick()
+  showToast('已收进常用图片')
 }
 
 function removeItem(id) {
@@ -568,5 +625,88 @@ onUnmounted(() => {
 .clip-leave-to {
   opacity: 0;
   transform: translateX(30px);
+}
+
+/* ---------- 最近图片（临时池） ---------- */
+.recent {
+  flex-shrink: 0;
+  padding: 0 8px 10px;
+}
+.recent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px 6px;
+}
+.recent-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(245, 245, 247, 0.75);
+}
+.recent-hint {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.32);
+}
+.recent-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+.recent-strip::-webkit-scrollbar {
+  display: none;
+}
+.recent-pic {
+  position: relative;
+  flex-shrink: 0;
+  width: 62px;
+  height: 46px;
+  border-radius: 9px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.recent-pic:hover {
+  border-color: rgba(90, 200, 250, 0.55);
+  transform: translateY(-1px);
+}
+.recent-pic.copied {
+  border-color: rgba(48, 209, 88, 0.65);
+}
+.recent-pic.saved {
+  border-color: rgba(255, 214, 10, 0.4);
+}
+.recent-pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.recent-star {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.recent-pic:hover .recent-star,
+.recent-star.on {
+  opacity: 1;
+}
+.recent-star.on {
+  color: #ffd60a;
 }
 </style>

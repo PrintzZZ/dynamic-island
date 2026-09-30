@@ -9,33 +9,30 @@
           图片<span v-if="images.length">{{ images.length }}</span>
         </button>
       </div>
-      <button v-if="view === 'image'" class="add-btn" title="导入图片" @click="pick">
+    </div>
+
+    <!-- 一行搞定：同一个输入框既搜索也新增，＋ 常驻
+         （原来是「搜索框 + 输入框 + 添加按钮」三行，太占地方） -->
+    <div class="bar">
+      <input
+        ref="inputEl"
+        v-model="q"
+        class="add-input"
+        :placeholder="view === 'text' ? '搜索，或输入新的常用语…' : '搜索图片…'"
+        @keydown.enter="onEnter"
+        @keydown.esc="q = ''"
+      />
+      <button
+        class="add-btn"
+        :title="view === 'text' ? '添加为新常用语' : '导入图片'"
+        @click="onPlus"
+      >
         <Icon name="plus" class="add-ico" />
       </button>
     </div>
 
-    <div class="search-bar">
-      <input
-        v-model="q"
-        class="add-input"
-        :placeholder="view === 'text' ? '搜索常用语…' : '搜索图片…'"
-      />
-    </div>
-
     <!-- ---------- 常用语 ---------- -->
     <template v-if="view === 'text'">
-      <div class="add-bar">
-        <input
-          v-model="draft"
-          class="add-input"
-          placeholder="输入常用语，回车添加…"
-          @keydown.enter="submit"
-        />
-        <button class="add-btn" title="添加" @click="submit">
-          <Icon name="plus" class="add-ico" />
-        </button>
-      </div>
-
       <div v-if="shownText.length" class="list">
         <TransitionGroup name="phrase">
           <div
@@ -61,10 +58,14 @@
 
       <div v-else class="empty">
         <div class="empty-icon"><Icon name="quote" class="empty-ico" /></div>
-        <div class="empty-text">{{ phrases.length ? '没有匹配的常用语' : '还没有常用语' }}</div>
-        <div class="empty-hint">
-          {{ phrases.length ? '换个关键词试试' : '在上方输入框添加，点击条目即可复制' }}
-        </div>
+        <template v-if="q.trim()">
+          <div class="empty-text">没有匹配「{{ q.trim() }}」</div>
+          <div class="empty-hint">回车即可添加为新常用语</div>
+        </template>
+        <template v-else>
+          <div class="empty-text">还没有常用语</div>
+          <div class="empty-hint">在上方输入框输入，回车添加<br />点击条目即复制</div>
+        </template>
       </div>
     </template>
 
@@ -89,10 +90,16 @@
 
       <div v-else class="empty">
         <div class="empty-icon"><Icon name="grid" class="empty-ico" /></div>
-        <div class="empty-text">{{ images.length ? '没有匹配的图片' : '还没有常用图片' }}</div>
-        <div class="empty-hint">
-          {{ images.length ? '换个关键词试试' : '点右上角 ＋ 导入，或在设置里管理' }}
-        </div>
+        <template v-if="q.trim()">
+          <div class="empty-text">没有匹配「{{ q.trim() }}」</div>
+          <div class="empty-hint">换个关键词，或点 ＋ 导入图片</div>
+        </template>
+        <template v-else>
+          <div class="empty-text">还没有常用图片</div>
+          <div class="empty-hint">
+            截图后点岛上提示条的 ☆ 收藏<br />或点上方 ＋ 导入本地图片
+          </div>
+        </template>
       </div>
     </template>
 
@@ -121,7 +128,7 @@ import { sfx } from '../../../../utils/sound'
 
 const view = ref('text')
 const q = ref('')
-const draft = ref('')
+const inputEl = ref(null)
 const copiedId = ref(null)
 const toast = ref('')
 let copiedTimer = null
@@ -145,11 +152,31 @@ function flash(id, msg) {
   }
 }
 
-function submit() {
-  const t = draft.value.trim()
+// 回车：搜到就复制第一条，没搜到就直接把它加成新常用语
+// （用户的要求：输入框和 ＋ 常驻，没搜到就添加，不用再分两个框）
+async function onEnter() {
+  const v = q.value.trim()
+  if (!v) return
+  if (view.value === 'image') return
+  if (shownText.value.length) return copy(shownText.value[0])
+  await addNow(v)
+}
+
+async function addNow(text) {
+  const t = String(text || '').trim()
   if (!t) return
-  addPhrase(t)
-  draft.value = ''
+  await addPhrase(t)
+  q.value = ''
+  sfx.tick()
+  flash(null, '已添加')
+}
+
+// ＋：常用语页 = 新增当前输入；空输入时聚焦输入框；图片页 = 导入本地图片
+async function onPlus() {
+  if (view.value === 'image') return pick()
+  const v = q.value.trim()
+  if (v) return addNow(v)
+  inputEl.value && inputEl.value.focus()
 }
 
 // 点击 = 直接复制 + 计数（方案第 23、26 条：不弹确认）
@@ -214,7 +241,8 @@ onUnmounted(() => {
   padding: 1px 8px;
 }
 
-.add-bar {
+/* 搜索 + 新增合成一行（原来是搜索框 / 输入框 / 添加按钮三行） */
+.bar {
   display: flex;
   gap: 8px;
   padding: 0 8px 10px;
@@ -441,11 +469,6 @@ onUnmounted(() => {
 .seg button span {
   font-size: 10px;
   opacity: 0.5;
-}
-
-.search-bar {
-  padding: 0 8px 8px;
-  flex-shrink: 0;
 }
 
 /* ---------- 常用图片：小瀑布流，点一下直接复制图片 ---------- */

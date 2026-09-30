@@ -77,26 +77,21 @@ onNoticeAction(async (payload, actionId) => {
   const api = typeof window !== 'undefined' ? window.api : null
   if (!api || !api.clipStarImage) return
   const saved = await api.clipStarImage(payload.clipId)
-  // 注意：动作按钮点完 DynamicIsland 会立刻 dismissNotice('user')，
-  // 所以这里不能"就地更新"，要重新弹一条确认（silent：点击本身已经响过提示音）
-  showNotice(
-    saved
-      ? {
-          accent: '#30D158',
-          icon: 'check',
-          title: '已收藏到常用图片',
-          detail: '可在 设置 →「常用」里管理',
-          silent: true,
-        }
-      : {
-          accent: '#FF453A',
-          icon: 'close',
-          title: '收藏失败',
-          detail: '图片可能已被清理',
-          silent: true,
-        },
-    1600
-  )
+  // 收藏成功后**不再弹确认提示**：动作按钮点完 DynamicIsland 已经 dismissNotice('user')，
+  // 岛会立刻收回紧凑态。用户下一步通常就是再展开岛去复制图片，多挂 1.6 秒确认很碍事。
+  // 反馈交给点击本身的提示音。只有失败才需要说明原因。
+  if (!saved) {
+    showNotice(
+      {
+        accent: '#FF453A',
+        icon: 'close',
+        title: '收藏失败',
+        detail: '图片可能已被清理',
+        silent: true,
+      },
+      1600
+    )
+  }
 })
 
 if (typeof window !== 'undefined' && window.api && window.api.onClipboardNew) {
