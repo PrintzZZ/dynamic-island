@@ -2,6 +2,10 @@
 
 > 把 iPhone 的灵动岛搬到 Windows 桌面 —— 一个无边框、透明、置顶的小胶囊，悬停展开成卡片，内置八个可单独启停的岛内应用。
 
+**[⬇ 下载最新版](https://github.com/PrintzZZ/dynamic-island/releases/latest)** ·
+每个版本两个文件：`…-setup.exe` 安装版、`…-portable.exe` 免安装便携版 ·
+要求 Windows 10 1809+
+
 <p>
 <img alt="Electron" src="https://img.shields.io/badge/Electron-31-47848F?logo=electron&logoColor=white" />
 <img alt="Vue" src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white" />
