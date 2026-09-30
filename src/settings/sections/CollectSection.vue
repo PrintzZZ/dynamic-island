@@ -87,9 +87,9 @@
               <div class="cl-text">{{ p.text }}</div>
             </template>
             <div class="cl-meta">
-              <span v-if="p.category" class="st-chip static">{{ p.category }}</span>
+              <!-- 分类不在这里重复显示：右侧的分组下拉已经能看出来 -->
               <span>用过 {{ p.useCount || 0 }} 次</span>
-              <span v-if="p.lastUsedAt">最近 {{ rel(p.lastUsedAt) }}</span>
+              <span v-if="p.lastUsedAt">{{ rel(p.lastUsedAt) }}用过</span>
             </div>
           </div>
           <div class="cl-acts">
@@ -644,6 +644,18 @@ onUnmounted(() => {
 .wf-acts .cl-cat {
   flex: 1;
   min-width: 0;
+}
+
+/* 列表里的删除按钮：默认描边、悬停才实心 —— 每行一块实心红在长列表里太抢眼 */
+.cl-acts .st-btn.danger {
+  background: transparent;
+  border-color: rgba(255, 69, 58, 0.38);
+  color: #ff6961;
+}
+.cl-acts .st-btn.danger:hover {
+  background: rgba(255, 69, 58, 0.92);
+  border-color: transparent;
+  color: #fff;
 }
 
 /* 分组胶囊：与上方工具栏、下方输入行保持一致的间距 */

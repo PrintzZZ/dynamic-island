@@ -15,7 +15,7 @@
           ref="inputEl"
           v-model="q"
           class="add-input"
-          :placeholder="view === 'text' ? '搜索或添加常用语…' : '搜索图片…'"
+          :placeholder="view === 'text' ? '搜索或添加…' : '搜索图片…'"
           @keydown.enter="onEnter"
           @keydown.esc="q = ''"
         />
@@ -287,7 +287,9 @@ onUnmounted(() => {
 .bar {
   display: flex;
   gap: 8px;
-  flex-shrink: 0;
+  /* 占满 seg 右侧剩余空间；min-width:0 才允许内部输入框真正收缩 */
+  flex: 1;
+  min-width: 0;
 }
 /* 分组胶囊那一行（管理在设置面板 →「常用」） */
 .group-bar {
@@ -296,6 +298,7 @@ onUnmounted(() => {
 }
 .add-input {
   flex: 1;
+  min-width: 0;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
@@ -313,6 +316,7 @@ onUnmounted(() => {
   color: rgba(255, 255, 255, 0.35);
 }
 .add-btn {
+  flex-shrink: 0;
   width: 36px;
   height: 36px;
   border-radius: 12px;
@@ -359,11 +363,16 @@ onUnmounted(() => {
 }
 .text {
   flex: 1;
+  min-width: 0;
   font-size: 13px;
+  line-height: 1.4;
   color: #f5f5f7;
+  /* 两行截断：模板类长常用语也能认出是哪条 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
 }
 .copied-tag {
   font-size: 11px;
@@ -489,12 +498,15 @@ onUnmounted(() => {
   padding: 3px;
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.06);
+  /* 和输入框同一行时不能被压扁，否则「常用语」会被拆成竖排 */
+  flex-shrink: 0;
 }
 .seg button {
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
+  white-space: nowrap;
   border: none;
   border-radius: 7px;
   background: transparent;
@@ -523,13 +535,15 @@ onUnmounted(() => {
   min-height: 0;
   overflow-y: auto;
   padding: 0 8px 12px;
-  column-width: 96px;
+  /* 固定 2 列：用 column-width 的话，图片的固有宽度会把列撑成 1 列 */
+  column-count: 2;
   column-gap: 8px;
 }
 .pic {
   position: relative;
   display: block;
   width: 100%;
+  min-width: 0;
   break-inside: avoid;
   margin: 0 0 8px;
   padding: 0;

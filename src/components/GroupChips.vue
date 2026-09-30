@@ -1,6 +1,6 @@
 <template>
   <div class="gc">
-    <div class="gc-scroll">
+    <div ref="scrollEl" class="gc-scroll" :class="{ 'is-scrollable': scrollable }">
       <button class="gc-chip" :class="{ on: modelValue === '*' }" @click="pick('*')">
         全部<em v-if="total">{{ total }}</em>
       </button>
@@ -50,7 +50,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps({
   // '*' = 全部（不筛选）；组名 = 该组；'' = 未分类
@@ -68,6 +68,23 @@ const draft = ref('')
 const inputEl = ref(null)
 
 const isGroup = computed(() => !!props.modelValue && props.modelValue !== '*')
+
+// 分组多了会横向溢出：给右侧一个渐隐，暗示"还能往右滑"
+const scrollEl = ref(null)
+const scrollable = ref(false)
+function updateScrollable() {
+  const el = scrollEl.value
+  if (el) scrollable.value = el.scrollWidth - el.clientWidth > 4
+}
+onMounted(() => {
+  updateScrollable()
+  window.addEventListener('resize', updateScrollable)
+})
+onUnmounted(() => window.removeEventListener('resize', updateScrollable))
+watch(
+  () => props.groups.length,
+  () => nextTick(updateScrollable)
+)
 const count = (g) => (props.counts && props.counts.get ? props.counts.get(g) || 0 : 0)
 const uncategorized = computed(() => count(''))
 
@@ -134,6 +151,11 @@ function remove(g) {
 }
 .gc-scroll::-webkit-scrollbar {
   display: none;
+}
+/* 只有真的溢出时才渐隐右缘 */
+.gc-scroll.is-scrollable {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
 }
 .gc-chip {
   position: relative;
