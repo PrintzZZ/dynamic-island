@@ -11,10 +11,6 @@
         </button>
       </div>
       <div class="cl-tools">
-        <select v-model="category" class="cl-input cl-sel">
-          <option value="">全部分类</option>
-          <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
-        </select>
         <select v-model="sortMode" class="cl-input cl-sel">
           <option value="smart">置顶 · 频率 · 最近</option>
           <option value="count">按使用频率</option>
@@ -23,20 +19,35 @@
       </div>
     </div>
 
+    <!-- 分组：筛选 + 管理（常用语与常用图片共用一套分组） -->
+    <GroupChips
+      v-model="group"
+      :groups="groups"
+      :counts="counts"
+      :total="source.length"
+      manage
+      class="cl-groups"
+      @add="onGroupAdd"
+      @rename="onGroupRename"
+      @remove="onGroupRemove"
+    />
+
     <!-- 搜索与新增合成一行：同一个输入框，有匹配就筛选，没匹配回车直接添加 -->
     <div class="cl-add">
       <input
         ref="inputEl"
         v-model="q"
         class="cl-input cl-grow"
-        :placeholder="view === 'phrases' ? '搜索，或输入新的常用语…' : '搜索图片…'"
+        :placeholder="
+          view === 'phrases'
+            ? group && group !== '*'
+              ? `在「${group}」里搜索，或输入新的常用语…`
+              : '搜索，或输入新的常用语…'
+            : '搜索图片…'
+        "
         @keydown.enter="onEnter"
         @keydown.esc="q = ''"
       />
-      <select v-if="view === 'phrases'" v-model="draftCat" class="cl-input cl-sel" title="新常用语的分类">
-        <option value="">未分类</option>
-        <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
-      </select>
       <button class="st-btn primary" @click="onPlus">
         {{ view === 'phrases' ? '添加' : '导入图片' }}
       </button>
@@ -50,6 +61,10 @@
     <template v-if="view === 'phrases'">
       <div v-if="!list.length" class="cl-empty">
         <template v-if="q.trim()">没有匹配「{{ q.trim() }}」—— 回车即可添加为新常用语</template>
+        <template v-else-if="group !== '*'">
+          {{ group ? `「${group}」里还没有常用语` : '还没有未分类的常用语' }} —— 在上方输入框输入后回车，
+          会加到这个分组
+        </template>
         <template v-else>还没有常用语，在上方输入框输入后回车即可添加</template>
       </div>
 
@@ -89,7 +104,7 @@
                 @change="setCategory(p, $event.target.value)"
               >
                 <option value="">未分类</option>
-                <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
+                <option v-for="c in groups" :key="c" :value="c">{{ c }}</option>
               </select>
               <button class="st-btn ghost" @click="startEdit(p)">编辑</button>
               <button class="st-btn danger" @click="del(p)">删除</button>
@@ -103,6 +118,9 @@
     <template v-else>
       <div v-if="!list.length" class="cl-empty">
         <template v-if="q.trim()">没有匹配「{{ q.trim() }}」—— 换个关键词，或点「导入图片」</template>
+        <template v-else-if="group !== '*'">
+          {{ group ? `「${group}」里还没有图片` : '还没有未分类的图片' }} —— Ctrl+V 存进来的图会归到这个分组
+        </template>
         <template v-else>还没有常用图片 —— 按 Ctrl+V 把剪贴板里的图存进来，或点「导入图片」</template>
       </div>
 
@@ -143,7 +161,7 @@
                 @change="setCategory(m, $event.target.value)"
               >
                 <option value="">未分类</option>
-                <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
+                <option v-for="c in groups" :key="c" :value="c">{{ c }}</option>
               </select>
               <button class="st-btn ghost" @click="startEdit(m)">改名</button>
               <button class="st-btn danger" @click="del(m)">删除</button>
@@ -161,15 +179,21 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import GroupChips from '../../components/GroupChips.vue'
 import {
-  CATEGORIES,
+  addGroup,
+  addPhrase,
   filterCollect,
+  groupCounts,
+  groups,
   images,
   initCollectState,
   installPasteHandler,
   phrases,
+  removeGroup,
   removeImage,
   removePhrase,
+  renameGroup,
   sortCollect,
   thumbUrl,
   updateImage,
@@ -177,15 +201,14 @@ import {
   useImage,
   usePhrase,
   pickImages,
-  addPhrase,
 } from '../../composables/useCollect'
 
 const view = ref('phrases')
 const q = ref('')
-const category = ref('')
+// 分组筛选：'*' 全部 / '' 未分类 / 组名。新建的条目会落进当前选中的分组。
+const group = ref('*')
 const sortMode = ref('smart')
 
-const draftCat = ref('')
 const inputEl = ref(null)
 const editing = ref('')
 const editText = ref('')
@@ -201,7 +224,43 @@ function say(msg) {
 }
 
 const source = computed(() => (view.value === 'phrases' ? phrases.value : images.value))
-const list = computed(() => sortCollect(filterCollect(source.value, { q: q.value, category: category.value }), sortMode.value))
+const list = computed(() =>
+  sortCollect(filterCollect(source.value, { q: q.value, group: group.value }), sortMode.value)
+)
+// 胶囊计数用当前页签的全量数据，不受搜索影响
+const counts = computed(() => groupCounts(source.value))
+
+/* ---------------- 分组管理 ---------------- */
+async function onGroupAdd(name) {
+  const g = await addGroup(name)
+  if (g) say(`已新建分组「${g}」`)
+}
+
+async function onGroupRename(from, to) {
+  const g = await renameGroup(from, to)
+  say(g ? `已重命名为「${g}」` : '重命名失败（可能已有同名分组）')
+}
+
+async function onGroupRemove(name) {
+  if (confirming.value !== `g:${name}`) {
+    confirming.value = `g:${name}`
+    say(`再点一次删除分组「${name}」（组内条目会变成未分类）`)
+    setTimeout(() => {
+      if (confirming.value === `g:${name}`) confirming.value = ''
+    }, 2600)
+    return
+  }
+  confirming.value = ''
+  const ok = await removeGroup(name)
+  if (ok) {
+    // 切回「全部」必须放在删除**成功之后**：否则第一次点击（二次确认那一步）
+    // 就会切走，胶囊上的 ✕ 随之消失，第二次根本点不到（实测踩过）
+    if (group.value === name) group.value = '*'
+    say(`已删除分组「${name}」`)
+  } else {
+    say('删除失败')
+  }
+}
 
 function rel(ts) {
   const d = Date.now() - Number(ts || 0)
@@ -214,7 +273,9 @@ function rel(ts) {
 async function addNow(text) {
   const t = String(text || '').trim()
   if (!t) return
-  await addPhrase(t, draftCat.value)
+  // 落进当前选中的分组（'*' 或 '' 时按未分类）
+  const target = group.value && group.value !== '*' ? group.value : ''
+  await addPhrase(t, target)
   q.value = ''
   say('已添加')
 }
@@ -583,6 +644,11 @@ onUnmounted(() => {
 .wf-acts .cl-cat {
   flex: 1;
   min-width: 0;
+}
+
+/* 分组胶囊：与上方工具栏、下方输入行保持一致的间距 */
+.cl-groups {
+  padding: 0 2px;
 }
 
 /* ---------- 空态与提示 ---------- */

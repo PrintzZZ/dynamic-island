@@ -43,6 +43,11 @@ contextBridge.exposeInMainWorld('api', {
   clipOpenUrl: (url) => ipcRenderer.invoke('collect:clip-open', url),
   onClipboardNew: (cb) => ipcRenderer.on('clipboard:new', (e, item) => cb(item)),
 
+  // 分组（常用语与常用图片共用一套分组）
+  groupAdd: (name) => ipcRenderer.invoke('collect:group-add', name),
+  groupRename: (from, to) => ipcRenderer.invoke('collect:group-rename', from, to),
+  groupRemove: (name) => ipcRenderer.invoke('collect:group-remove', name),
+
   // 常用语
   phraseAdd: (payload) => ipcRenderer.invoke('collect:phrase-add', payload),
   phraseUpdate: (id, patch) => ipcRenderer.invoke('collect:phrase-update', id, patch),

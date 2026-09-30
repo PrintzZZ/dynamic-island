@@ -4,7 +4,7 @@
 // 图片是 collect://thumb/<id> 这样的 URL，绝不把 Base64 放进 Vue state —— 方案第 56 条。
 import { computed, ref } from 'vue'
 
-const state = ref({ phrases: [], images: [], clip: { items: [], images: [] } })
+const state = ref({ groups: [], phrases: [], images: [], clip: { items: [], images: [] } })
 let bound = false
 
 function apply(s) {
@@ -26,7 +26,21 @@ export const images = computed(() => state.value.images || [])
 export const clipTexts = computed(() => (state.value.clip && state.value.clip.items) || [])
 export const clipImages = computed(() => (state.value.clip && state.value.clip.images) || [])
 
-// 方案第 29 条的分类。不是强制项：留空 = 未分类。
+// 分组：常用语与常用图片共用同一套名字列表（在设置页管理，岛内只用来筛选）。
+// 条目本身依旧用 category 字段存组名，所以老数据不需要迁移。
+export const groups = computed(() => state.value.groups || [])
+
+// 分组 → 条目数（胶囊上的计数）；空字符串代表「未分类」
+export function groupCounts(list) {
+  const m = new Map()
+  for (const x of Array.isArray(list) ? list : []) {
+    const k = x.category || ''
+    m.set(k, (m.get(k) || 0) + 1)
+  }
+  return m
+}
+
+// 首屏预置分组（仅当主进程还没回数据时用来占位，避免胶囊闪一下空白）
 export const CATEGORIES = ['售前', '安装', '使用', '售后', '其他']
 
 export const thumbUrl = (id) => `collect://thumb/${id}`
@@ -47,11 +61,19 @@ export function sortCollect(list, mode = 'smart') {
   )
 }
 
-// 搜索：常用语搜正文，图片搜名称（方案第 31、39 条）
-export function filterCollect(list, { q = '', category = '' } = {}) {
+// 搜索 + 分组筛选（常用语搜正文，图片搜名称）
+//   group = '*'  不按分组筛（全部）
+//   group = ''   只看「未分类」
+//   group = 组名 只看该组
+export function filterCollect(list, { q = '', group = '*', category = '' } = {}) {
   const kw = String(q || '').trim().toLowerCase()
   return (Array.isArray(list) ? list : []).filter((x) => {
-    if (category && (x.category || '') !== category) return false
+    if (group !== '*') {
+      if ((x.category || '') !== group) return false
+    } else if (category && (x.category || '') !== category) {
+      // 兼容旧调用（直接传 category）
+      return false
+    }
     if (!kw) return true
     const hay = [x.text, x.name, x.category].filter(Boolean).join(' ').toLowerCase()
     return hay.includes(kw)
@@ -121,6 +143,27 @@ export async function pasteImage() {
   return a.imagePaste()
 }
 
+/* ---------------- 分组 ---------------- */
+
+export async function addGroup(name) {
+  const a = api()
+  if (!a || !a.groupAdd) return null
+  return a.groupAdd(String(name || '').trim())
+}
+
+export async function renameGroup(from, to) {
+  const a = api()
+  if (!a || !a.groupRename) return null
+  return a.groupRename(from, to)
+}
+
+// 删除分组：该分组下的条目会回落「未分类」
+export async function removeGroup(name) {
+  const a = api()
+  if (!a || !a.groupRemove) return false
+  return !!(await a.groupRemove(name))
+}
+
 // 全局粘贴监听：只在指定视图生效；焦点在输入框/文本域里时不拦截
 // （否则用户想在搜索框里粘贴文字会被抢走）
 export function installPasteHandler(getEnabled, onResult) {
@@ -151,6 +194,7 @@ export async function revealFile(p) {
 
 export function usePhrases() {
   return {
+    groups,
     phrases,
     images,
     clipTexts,
@@ -165,6 +209,9 @@ export function usePhrases() {
     removeImage,
     pickImages,
     importImages,
+    addGroup,
+    renameGroup,
+    removeGroup,
   }
 }
 

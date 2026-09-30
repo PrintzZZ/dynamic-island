@@ -9,27 +9,34 @@
           图片<span v-if="images.length">{{ images.length }}</span>
         </button>
       </div>
+      <!-- 一行搞定：同一个输入框既搜索也新增，＋ 常驻-->
+      <div class="bar">
+        <input
+          ref="inputEl"
+          v-model="q"
+          class="add-input"
+          :placeholder="view === 'text' ? '搜索或添加常用语…' : '搜索图片…'"
+          @keydown.enter="onEnter"
+          @keydown.esc="q = ''"
+        />
+        <button
+          class="add-btn"
+          :title="view === 'text' ? '添加为新常用语' : '导入图片'"
+          @click="onPlus"
+        >
+          <Icon name="plus" class="add-ico" />
+        </button>
+      </div>
     </div>
 
-    <!-- 一行搞定：同一个输入框既搜索也新增，＋ 常驻
-         （原来是「搜索框 + 输入框 + 添加按钮」三行，太占地方） -->
-    <div class="bar">
-      <input
-        ref="inputEl"
-        v-model="q"
-        class="add-input"
-        :placeholder="view === 'text' ? '搜索，或输入新的常用语…' : '搜索图片…'"
-        @keydown.enter="onEnter"
-        @keydown.esc="q = ''"
-      />
-      <button
-        class="add-btn"
-        :title="view === 'text' ? '添加为新常用语' : '导入图片'"
-        @click="onPlus"
-      >
-        <Icon name="plus" class="add-ico" />
-      </button>
-    </div>
+    <!-- 分组筛选：只做筛选，管理在设置面板 →「常用」 -->
+    <GroupChips
+      v-model="group"
+      class="group-bar"
+      :groups="groups"
+      :counts="counts"
+      :total="totalOf"
+    />
 
     <!-- ---------- 常用语 ---------- -->
     <template v-if="view === 'text'">
@@ -61,6 +68,10 @@
         <template v-if="q.trim()">
           <div class="empty-text">没有匹配「{{ q.trim() }}」</div>
           <div class="empty-hint">回车即可添加为新常用语</div>
+        </template>
+        <template v-else-if="group !== '*'">
+          <div class="empty-text">{{ group ? `「${group}」里还没有常用语` : '还没有未分类的常用语' }}</div>
+          <div class="empty-hint">在上方输入框输入，回车即添加到这个分组</div>
         </template>
         <template v-else>
           <div class="empty-text">还没有常用语</div>
@@ -95,6 +106,10 @@
           <div class="empty-text">没有匹配「{{ q.trim() }}」</div>
           <div class="empty-hint">换个关键词，或点 ＋ 导入图片</div>
         </template>
+        <template v-else-if="group !== '*'">
+          <div class="empty-text">{{ group ? `「${group}」里还没有图片` : '还没有未分类的图片' }}</div>
+          <div class="empty-hint">Ctrl+V 存进来的图会归到这个分组</div>
+        </template>
         <template v-else>
           <div class="empty-text">还没有常用图片</div>
           <div class="empty-hint">
@@ -113,9 +128,12 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import Icon from '../../../../components/Icon.vue'
+import GroupChips from '../../../../components/GroupChips.vue'
 import {
   addPhrase,
   filterCollect,
+  groupCounts,
+  groups,
   images,
   installPasteHandler,
   phrases,
@@ -130,14 +148,19 @@ import { sfx } from '../../../../utils/sound'
 
 const view = ref('text')
 const q = ref('')
+// 当前选中的分组：'*' 全部 / '' 未分类 / 组名。新增的条目会落进这里选中的组。
+const group = ref('*')
 const inputEl = ref(null)
 const copiedId = ref(null)
 const toast = ref('')
 let copiedTimer = null
 let toastTimer = null
 
-const shownText = computed(() => sortCollect(filterCollect(phrases.value, { q: q.value })))
-const shownImages = computed(() => sortCollect(filterCollect(images.value, { q: q.value })))
+const shownText = computed(() => sortCollect(filterCollect(phrases.value, { q: q.value, group: group.value })))
+const shownImages = computed(() => sortCollect(filterCollect(images.value, { q: q.value, group: group.value })))
+// 胶囊上的计数用**当前页签的全量数据**算，不受搜索影响
+const counts = computed(() => groupCounts(view.value === 'text' ? phrases.value : images.value))
+const totalOf = computed(() => (view.value === 'text' ? phrases.value.length : images.value.length))
 
 function flash(id, msg) {
   copiedId.value = id
@@ -167,7 +190,9 @@ async function onEnter() {
 async function addNow(text) {
   const t = String(text || '').trim()
   if (!t) return
-  await addPhrase(t)
+  // 落进当前选中的分组（'*' 或 '' 时按未分类）
+  const target = group.value && group.value !== '*' ? group.value : ''
+  await addPhrase(t, target)
   q.value = ''
   sfx.tick()
   flash(null, '已添加')
@@ -239,6 +264,7 @@ onUnmounted(() => {
   justify-content: space-between;
   padding: 12px 8px 8px;
   flex-shrink: 0;
+  gap: 8px;
 }
 .title {
   font-size: 16px;
@@ -261,7 +287,11 @@ onUnmounted(() => {
 .bar {
   display: flex;
   gap: 8px;
-  padding: 0 8px 10px;
+  flex-shrink: 0;
+}
+/* 分组胶囊那一行（管理在设置面板 →「常用」） */
+.group-bar {
+  padding: 0 8px 8px;
   flex-shrink: 0;
 }
 .add-input {

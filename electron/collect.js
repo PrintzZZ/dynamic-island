@@ -107,7 +107,7 @@ function flush() {
     items: clipItems,
     images: clipImages,
   })
-  writeJson(path.join(dirs().phrases, 'phrases.json'), { version: 1, phrases })
+  writeJson(path.join(dirs().phrases, 'phrases.json'), { version: 2, groups, phrases })
 }
 
 // ---------------------------------------------------------------- 状态
@@ -116,6 +116,10 @@ let clipItems = [] // 文本 / 链接，新的在前
 let clipImages = [] // 最近图片，新的在前，最多 RECENT_IMAGES_MAX
 let phrases = [] // 常用语
 let images = [] // 常用图片
+// 分组：一个有序的名字列表，用户可增删改。
+// 条目本身还是用 phrashe/image 的 category 字段存组名 —— 这样老数据不用迁移。
+let groups = []
+const PRESET_GROUPS = ['售前', '安装', '使用', '售后', '其他']
 
 function clipMax() {
   return Math.max(1, Number(settings.load().clipboardLimit) || 60)
@@ -181,8 +185,31 @@ export function initCollect() {
         updatedAt: Number(x.updatedAt) || Number(x.createdAt) || Date.now(),
       }))
   }
+  if (p && Array.isArray(p.groups)) {
+    groups = p.groups.filter((g) => typeof g === 'string' && g.trim()).map((g) => g.trim())
+  }
   images = scanImages()
+  syncGroups()
   flush()
+}
+
+// 保证分组列表是自洽的：
+//   1. 第一次运行（没有分组）用预置分组打底；
+//   2. 老数据里用过、但不在列表里的组名补进来 —— 否则那些条目会"消失在分组筛选之外"；
+//   3. 去重、去空。
+function syncGroups() {
+  if (!groups.length) groups = PRESET_GROUPS.slice()
+  const used = new Set()
+  for (const p of phrases) if (p.category) used.add(p.category)
+  for (const m of images) if (m.category) used.add(m.category)
+  for (const g of used) if (!groups.includes(g)) groups.push(g)
+  const seen = new Set()
+  groups = groups.filter((g) => {
+    const k = g.trim()
+    if (!k || seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
 }
 
 // 常用图片的元数据以 JSON 为准，但也要把磁盘上"有文件没记录"的补回来（例如手动丢进目录）
@@ -290,6 +317,7 @@ export function attachCollectWindows(islandWin, settingsWin) {
 
 export function snapshot() {
   return {
+    groups: groups.slice(),
     phrases: phrases.map((p) => ({ ...p })),
     images: images.map((m) => ({ ...m })),
     clip: {
@@ -742,6 +770,55 @@ export function clipboardMode() {
   return nativeOk ? 'native' : pollTimer ? 'poll' : 'off'
 }
 
+// ---------------------------------------------------------------- 分组
+
+const GROUP_NAME_MAX = 12
+
+function cleanGroupName(name) {
+  return String(name || '').trim().slice(0, GROUP_NAME_MAX)
+}
+
+export function groupAdd(name) {
+  const g = cleanGroupName(name)
+  if (!g) return null
+  if (groups.includes(g)) return g // 已存在就当成功
+  groups.push(g)
+  flush()
+  broadcast()
+  return g
+}
+
+// 重命名：分组列表和**所有条目**一起改，避免出现"组没了但条目还挂着旧名"
+export function groupRename(from, to) {
+  const a = cleanGroupName(from)
+  const b = cleanGroupName(to)
+  if (!a || !b || a === b) return null
+  const i = groups.indexOf(a)
+  if (i === -1) return null
+  if (groups.includes(b)) return null // 目标是已有分组，拒绝，避免合并歧义
+  groups[i] = b
+  for (const p of phrases) if (p.category === a) p.category = b
+  for (const m of images) if (m.category === a) m.category = b
+  flush()
+  writeImagesMeta()
+  broadcast()
+  return b
+}
+
+// 删除分组：该分组下的条目回落「未分类」（明确、不留孤儿组名）
+export function groupRemove(name) {
+  const g = cleanGroupName(name)
+  const i = groups.indexOf(g)
+  if (i === -1) return false
+  groups.splice(i, 1)
+  for (const p of phrases) if (p.category === g) p.category = ''
+  for (const m of images) if (m.category === g) m.category = ''
+  flush()
+  writeImagesMeta()
+  broadcast()
+  return true
+}
+
 // ---------------------------------------------------------------- 常用语
 
 export function phraseAdd({ text, category }) {
@@ -1052,6 +1129,11 @@ export function registerCollectIpc() {
       return false
     }
   })
+
+  // ---- 分组 ----
+  ipcMain.handle('collect:group-add', (_e, name) => groupAdd(name))
+  ipcMain.handle('collect:group-rename', (_e, from, to) => groupRename(from, to))
+  ipcMain.handle('collect:group-remove', (_e, name) => groupRemove(name))
 
   // ---- 常用语 ----
   ipcMain.handle('collect:phrase-add', (_e, payload) => phraseAdd(payload || {}))
