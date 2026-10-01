@@ -178,8 +178,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import GroupChips from '../../components/GroupChips.vue'
+import { settings as appSettings, update as updateSettings } from '../../composables/useSettings'
 import {
   addGroup,
   addPhrase,
@@ -206,7 +207,11 @@ import {
 const view = ref('phrases')
 const q = ref('')
 // 分组筛选：'*' 全部 / '' 未分类 / 组名。新建的条目会落进当前选中的分组。
-const group = ref('*')
+// 与岛内共用同一个记忆值（settings.json 的 phraseGroup），两边切换保持一致。
+const group = computed({
+  get: () => appSettings.phraseGroup || '*',
+  set: (v) => updateSettings({ phraseGroup: String(v || '*') }),
+})
 const sortMode = ref('smart')
 
 const inputEl = ref(null)
@@ -229,6 +234,12 @@ const list = computed(() =>
 )
 // 胶囊计数用当前页签的全量数据，不受搜索影响
 const counts = computed(() => groupCounts(source.value))
+
+// 记忆的分组被删掉时回落到「全部」
+watch(groups, (list) => {
+  const g = group.value
+  if (g !== '*' && g !== '' && !list.includes(g)) group.value = '*'
+})
 
 /* ---------------- 分组管理 ---------------- */
 async function onGroupAdd(name) {

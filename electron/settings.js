@@ -117,6 +117,11 @@ export const DEFAULTS = {
   // 属于「使用记录」而不是偏好，恢复默认设置时不重置（见 reset 的 keep）。
   musicArmed: false,
 
+  // 「常用」页上次选中的分组（'*' = 全部，'' = 未分类，其余是分组名）。
+  // 同属「使用记录」：不改偏好就不该点亮「恢复默认设置」，恢复默认时也保留 ——
+  // 用户下次展开还是想看到自己上次挑的那个分组。
+  phraseGroup: '*',
+
   // 材料箱
   mboxOpenAfterZip: true,
   mboxSaveDir: 'auto', // auto | desktop | downloads
@@ -203,6 +208,8 @@ function sanitize(raw) {
   s.musicLyricNetease = bool(s.musicLyricNetease, DEFAULTS.musicLyricNetease)
   s.musicLyricQQ = bool(s.musicLyricQQ, DEFAULTS.musicLyricQQ)
   s.musicArmed = bool(s.musicArmed, DEFAULTS.musicArmed)
+  s.phraseGroup =
+    typeof s.phraseGroup === 'string' && s.phraseGroup.length <= 24 ? s.phraseGroup : DEFAULTS.phraseGroup
   // 材料箱
   s.mboxOpenAfterZip = bool(s.mboxOpenAfterZip, DEFAULTS.mboxOpenAfterZip)
   s.mboxSaveDir = oneOf(s.mboxSaveDir, MBOX_SAVE_DIRS, DEFAULTS.mboxSaveDir)
@@ -263,7 +270,12 @@ export function reset() {
   // 便签 / 待办 / 时间统计 / 剪贴板历史 / 材料箱任务都不在这里，不会被碰。
   // musicArmed 是「使用记录」不是偏好：重置掉它会让正在用音乐的人突然丢掉歌词条，
   // 所以和位置一样保留。
-  const keep = { lastX: load().lastX, lastY: load().lastY, musicArmed: load().musicArmed }
+  const keep = {
+    lastX: load().lastX,
+    lastY: load().lastY,
+    musicArmed: load().musicArmed,
+    phraseGroup: load().phraseGroup,
+  }
   cache = sanitize({ ...keep, seeded: true })
   save()
   apply()

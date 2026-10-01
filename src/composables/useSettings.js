@@ -72,6 +72,8 @@ export const DEFAULTS = {
   musicLyricNetease: true,
   musicLyricQQ: true,
   musicArmed: false,
+  // 「常用」页上次选中的分组（'*' 全部 / '' 未分类 / 组名）
+  phraseGroup: '*',
   // 材料箱
   mboxOpenAfterZip: true,
   mboxSaveDir: 'auto',
@@ -92,7 +94,7 @@ export const PREF_KEYS = Object.keys(DEFAULTS).filter(
 // 「恢复默认设置」点亮。但它仍留在 PREF_KEYS 里 —— 真的恢复默认时应该一起清零。
 // musicArmed 同理（音乐 helper 是否已经按需拉起过）；不过它在主进程的 reset() 里
 // 和窗口位置一样被保留，否则正在用音乐的人会突然丢掉歌词条。
-const USAGE_KEYS = ['cardHintSwipes', 'musicArmed']
+const USAGE_KEYS = ['cardHintSwipes', 'musicArmed', 'phraseGroup']
 
 // systemDark 不进 DEFAULTS：它来自主进程的 nativeTheme，不是用户设置
 const state = reactive({ ...DEFAULTS, ready: false, systemDark: true })

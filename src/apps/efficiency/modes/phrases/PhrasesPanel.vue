@@ -126,7 +126,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Icon from '../../../../components/Icon.vue'
 import GroupChips from '../../../../components/GroupChips.vue'
 import {
@@ -144,12 +144,17 @@ import {
   useImage,
   usePhrase,
 } from './usePhrases'
+import { settings as appSettings, update as updateSettings } from '../../../../composables/useSettings'
 import { sfx } from '../../../../utils/sound'
 
 const view = ref('text')
 const q = ref('')
 // 当前选中的分组：'*' 全部 / '' 未分类 / 组名。新增的条目会落进这里选中的组。
-const group = ref('*')
+// 选择会**记进 settings.json**（两个窗口共享一个值），所以下次展开「还是售前」。
+const group = computed({
+  get: () => appSettings.phraseGroup || '*',
+  set: (v) => updateSettings({ phraseGroup: String(v || '*') }),
+})
 const inputEl = ref(null)
 const copiedId = ref(null)
 const toast = ref('')
@@ -161,6 +166,12 @@ const shownImages = computed(() => sortCollect(filterCollect(images.value, { q: 
 // 胶囊上的计数用**当前页签的全量数据**算，不受搜索影响
 const counts = computed(() => groupCounts(view.value === 'text' ? phrases.value : images.value))
 const totalOf = computed(() => (view.value === 'text' ? phrases.value.length : images.value.length))
+
+// 记忆的分组被删掉时回落到「全部」—— 否则会卡在一个不存在的分组上，列表永远是空的
+watch(groups, (list) => {
+  const g = group.value
+  if (g !== '*' && g !== '' && !list.includes(g)) group.value = '*'
+})
 
 function flash(id, msg) {
   copiedId.value = id
