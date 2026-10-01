@@ -321,6 +321,14 @@ onUnmounted(() => {
 .list {
   flex: 1;
   overflow-y: auto;
+  /* 必须显式写 overflow-x：只声明 overflow-y 时，规范会把另一轴的 visible 算成 auto，
+     于是任何横向溢出（例如切换分组时旧条目 translateX 滑出）都会闪出一条横向滚动条，
+     滚动条又挤掉可用宽度让文字重新折行 —— 看起来就是"卡顿一下"。 */
+  overflow-x: hidden;
+  /* 预留滚动条的位置：内容一长一短时，竖向滚动条会反复出现 / 消失，
+     可用宽度随之在 6px 之间跳（全局滚动条就是 6px），文字跟着重新折行 ——
+     表现就是切换分组时"卡顿一下"。stable 让这 6px 一直留着，布局不再抖。 */
+  scrollbar-gutter: stable;
   padding: 0 8px 8px;
   display: flex;
   flex-direction: column;
