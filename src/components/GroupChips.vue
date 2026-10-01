@@ -31,6 +31,11 @@
       >
         未分类<em>{{ uncategorized }}</em>
       </button>
+
+      <!-- 放在最后一个分组之后：点它才回到第一个（滚动回去，不改选中） -->
+      <button v-if="scrollable" class="gc-jump" title="回到第一个分组" @click="jumpToStart">
+        <Icon name="chevron-right" class="gc-jump-ico" />
+      </button>
     </div>
 
     <!-- 新建 / 重命名：Electron 里没有 window.prompt，用行内输入框 -->
@@ -58,6 +63,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import Icon from './Icon.vue'
 
 const props = defineProps({
   // '*' = 全部（不筛选）；组名 = 该组；'' = 未分类
@@ -132,6 +138,21 @@ function scrollToLeft(left) {
   animRaf = requestAnimationFrame(step)
 }
 
+// 某个胶囊是否"舒服地"露出来了（避开两侧渐隐）；退化 rect 视为到位，别乱滚
+function isComfortable(chip) {
+  const el = scrollEl.value
+  if (!el || !chip) return true
+  const box = el.getBoundingClientRect()
+  const r = chip.getBoundingClientRect()
+  if (!r.width || !box.width) return true
+  return r.left >= box.left + EDGE && r.right <= box.right - EDGE
+}
+
+function activeChipEl() {
+  const el = scrollEl.value
+  return el ? el.querySelector('.gc-chip.on') : null
+}
+
 // 让某个胶囊"舒服地"露出来：
 //   · 已经避开两侧渐隐、完整可见 → 不动它（免得每点一下都乱跳）
 //   · 否则把它**对齐到左边距** —— 关键是"对齐左边"而不是"最小移动"：
@@ -140,10 +161,11 @@ function scrollToLeft(left) {
 function ensureVisible(chip, opts = {}) {
   const el = scrollEl.value
   if (!el || !chip) return
+  if (isComfortable(chip) && !opts.force) return
   const box = el.getBoundingClientRect()
   const r = chip.getBoundingClientRect()
-  const comfortable = r.left >= box.left + EDGE && r.right <= box.right - EDGE
-  if (comfortable && !opts.force) return
+  // 退化 rect（元素已脱离文档流）→ 别滚：拿它算出来的目标会一路跑回最左边
+  if (!r.width || !box.width) return
   scrollToLeft(el.scrollLeft + (r.left - box.left) - EDGE)
 }
 
@@ -170,18 +192,24 @@ function onWheel(e) {
 }
 
 function scrollActiveIntoView() {
-  const el = scrollEl.value
-  if (!el) return
-  const chip = el.querySelector('.gc-chip.on')
-  if (chip) ensureVisible(chip)
+  ensureVisible(activeChipEl())
 }
 
-// 展开动画 / 字体加载 / 计数变化都会让布局尺寸继续变，一次测量往往不够 ——
-// 轻量重试几次（不常驻、不与用户滚动打架）
+// 展开动画 / 字体加载 / 计数变化都会让布局尺寸继续变，一次测量往往不够，所以要补测；
+// 但**一旦到位就立刻停** —— 否则动画结束后的一次补测若判成"不够舒服"，
+// 会把这排再拽一次，看起来就像"自己乱跳"。
 let settleTimers = []
+const SETTLE_DELAYS = [0, 120, 260, 480, 800]
 function scrollActiveIntoViewSoon() {
   settleTimers.forEach(clearTimeout)
-  settleTimers = [0, 90, 220, 460, 900].map((d) => setTimeout(scrollActiveIntoView, d))
+  settleTimers = []
+  const pass = (i) => {
+    scrollActiveIntoView()
+    if (i + 1 < SETTLE_DELAYS.length && !isComfortable(activeChipEl())) {
+      settleTimers.push(setTimeout(() => pass(i + 1), SETTLE_DELAYS[i + 1]))
+    }
+  }
+  pass(0)
 }
 
 onMounted(() => {
@@ -207,6 +235,11 @@ watch(
 )
 const count = (g) => (props.counts && props.counts.get ? props.counts.get(g) || 0 : 0)
 const uncategorized = computed(() => count(''))
+
+// 回到第一个分组：只滚动，不改变当前选中（改选中会让人意外）
+function jumpToStart() {
+  scrollToLeft(0)
+}
 
 function pick(v, ev) {
   if (editing.value) cancel()
@@ -330,6 +363,30 @@ function remove(g) {
   font-style: normal;
   font-size: 10px;
   opacity: 0.6;
+}
+/* 排在最后一个分组之后的「›」：点它才回到开头 */
+.gc-jump {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--st-fill, rgba(255, 255, 255, 0.06));
+  color: var(--st-text-2, rgba(255, 255, 255, 0.5));
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.gc-jump:hover {
+  background: rgba(191, 90, 242, 0.2);
+  color: #bf5af2;
+}
+.gc-jump-ico {
+  width: 13px;
+  height: 13px;
 }
 .gc-x {
   margin-left: 2px;

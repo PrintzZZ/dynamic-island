@@ -169,6 +169,10 @@ const totalOf = computed(() => (view.value === 'text' ? phrases.value.length : i
 
 // 记忆的分组被删掉时回落到「全部」—— 否则会卡在一个不存在的分组上，列表永远是空的
 watch(groups, (list) => {
+  // ⚠️ 必须先判断"列表是不是真的到了"：启动瞬间 collect 数据还没回来，
+  // 这时 groups 是空数组，直接跑下面的 contains 判断会把**记忆的分组清成「全部」**，
+  // 表现就是"一打开（或刚点完）就跳回第一个分组"（实测踩过）。
+  if (!list.length) return
   const g = group.value
   if (g !== '*' && g !== '' && !list.includes(g)) group.value = '*'
 })
