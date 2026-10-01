@@ -4,6 +4,7 @@
       ref="scrollEl"
       class="gc-scroll"
       :class="{ 'is-scrollable': scrollable, 'can-left': canLeft, 'can-right': canRight }"
+      :title="scrollable ? '分组较多：Shift + 滚轮 可横向滚动' : ''"
       @wheel="onWheel"
       @scroll="updateScrollable"
     >
@@ -107,14 +108,22 @@ function ensureVisible(chip) {
   updateScrollable()
 }
 
-// 竖向滚轮 → 横向滚动（面板里没有可见滚动条，鼠标也没有横向滚轮）
+// 滚轮：**只认 Shift + 竖向滚轮**，其余全部放行。
+//
+// 为什么收得这么紧：滚轮在岛内已经被 CardCarousel 占用了，而且它有一套刻意的策略 ——
+// 竖向滚轮"先滚内容、滚到边界才切卡"，横向滚动直接切卡。分组栏只是顶部一条窄带，
+// 指针经常掠过它；只要在这里拦一下竖向滚轮，列表就滚不动（用户反馈的冲突），
+// 拦横向滚动又会抢掉切卡手势。所以只留 Shift + 滚轮这个谁都不用的组合。
+//
+// 够不到后面的分组也不用担心：**点第 6 个会自动把它滚进视野**，一路点过去就能走到最后；
+// 另外打开时会自动把（记住的）当前分组滚到可见位置。
 function onWheel(e) {
   const el = scrollEl.value
   if (!el) return
   const max = el.scrollWidth - el.clientWidth
   if (max <= 4) return
-  const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
-  const next = Math.max(0, Math.min(max, el.scrollLeft + d))
+  if (!e.shiftKey) return // 竖向交给内容滚动、横向交给切卡，都不抢
+  const next = Math.max(0, Math.min(max, el.scrollLeft + e.deltaY))
   if (next === el.scrollLeft) return
   e.preventDefault()
   el.scrollLeft = next
@@ -219,7 +228,11 @@ function remove(g) {
   display: flex;
   align-items: center;
   gap: 6px;
-  overflow-x: auto;
+  /* 刻意用 hidden 而不是 auto：auto 时浏览器会把竖向滚轮也判成"横向滚动这条"，
+     于是指针一掠过分组栏，面板列表就滚不动了（用户反馈的冲突）。
+     这里 overflow-x: hidden 仍然是一个可编程滚动的滚动容器，scrollLeft 照常可写，
+     滚动全部交给下面 onWheel / ensureVisible 精确控制。 */
+  overflow-x: hidden;
   padding-bottom: 2px;
   scrollbar-width: none;
 }
