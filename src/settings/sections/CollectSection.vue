@@ -209,8 +209,12 @@ const q = ref('')
 // 分组筛选：'*' 全部 / '' 未分类 / 组名。新建的条目会落进当前选中的分组。
 // 与岛内共用同一个记忆值（settings.json 的 phraseGroup），两边切换保持一致。
 const group = computed({
-  get: () => appSettings.phraseGroup || '*',
-  set: (v) => updateSettings({ phraseGroup: String(v || '*') }),
+  // ⚠️ 千万别写成 `|| '*'`：「未分类」用的哨兵值是**空字符串**，而空字符串是 falsy ——
+  // `'' || '*'` 会把它当成"没设置"落到「全部」，于是点「未分类」按钮跳到「全部」、
+  // 页面内容也变成全部（实测踩过；「未分类」又恰好排在最后一个，
+  // 所以当时看起来像"点最后一个会跳回第一个"）。
+  get: () => (typeof appSettings.phraseGroup === 'string' ? appSettings.phraseGroup : '*'),
+  set: (v) => updateSettings({ phraseGroup: typeof v === 'string' ? v : '*' }),
 })
 const sortMode = ref('smart')
 
