@@ -96,16 +96,55 @@ function updateScrollable() {
   canRight.value = max > 4 && el.scrollLeft < max - 2
 }
 
-// 让某个胶囊完整露出来（留一点边距，不然贴着渐隐边缘不好看）
-function ensureVisible(chip) {
+// 右侧渐隐宽度（与样式里的 22px 对齐）——"算作可见"的边距必须 >= 它，
+// 否则胶囊明明压在渐隐里，这里却认为已经露全了，用户看到的就是"只漏出来一点点"。
+const FADE = 22
+const EDGE = FADE + 8
+
+// 平滑滚动：自己用 rAF 做。
+// 不能用 scrollTo({ behavior: 'smooth' }) —— 这个容器是 overflow-x: hidden，
+// 实测那个 API 在它上面不会产生动画，直接瞬移。
+let animRaf = 0
+function scrollToLeft(left) {
+  const el = scrollEl.value
+  if (!el) return
+  const max = el.scrollWidth - el.clientWidth
+  const target = Math.max(0, Math.min(max, Math.round(left)))
+  const from = el.scrollLeft
+  if (Math.abs(target - from) < 1) return
+  if (animRaf) cancelAnimationFrame(animRaf)
+  // 距离越远稍慢一点，但控制在 140~320ms，点起来才跟手
+  const dur = Math.min(320, Math.max(140, Math.abs(target - from) * 0.45))
+  const t0 = performance.now()
+  const ease = (p) => 1 - Math.pow(1 - p, 3) // easeOutCubic：起步快、收尾稳
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / dur)
+    el.scrollLeft = from + (target - from) * ease(p)
+    updateScrollable()
+    if (p < 1) {
+      animRaf = requestAnimationFrame(step)
+    } else {
+      animRaf = 0
+      el.scrollLeft = target
+      updateScrollable()
+    }
+  }
+  animRaf = requestAnimationFrame(step)
+}
+
+// 让某个胶囊"舒服地"露出来：
+//   · 已经避开两侧渐隐、完整可见 → 不动它（免得每点一下都乱跳）
+//   · 否则把它**对齐到左边距** —— 关键是"对齐左边"而不是"最小移动"：
+//     只移动刚够自己露出来的距离，它后面那个（常常就是最后一个）仍然看不见（用户反馈）。
+//     对齐左边之后，它后面那几个会一起露出来。
+function ensureVisible(chip, opts = {}) {
   const el = scrollEl.value
   if (!el || !chip) return
   const box = el.getBoundingClientRect()
   const r = chip.getBoundingClientRect()
-  const pad = 10
-  if (r.left < box.left + pad) el.scrollLeft -= box.left + pad - r.left
-  else if (r.right > box.right - pad) el.scrollLeft += r.right - (box.right - pad)
-  updateScrollable()
+  const comfortable = r.left >= box.left + EDGE && r.right <= box.right - EDGE
+  if (comfortable && !opts.force) return
+  scrollToLeft(el.scrollLeft + (r.left - box.left) - EDGE)
 }
 
 // 滚轮：**只认 Shift + 竖向滚轮**，其余全部放行。
@@ -126,7 +165,7 @@ function onWheel(e) {
   const next = Math.max(0, Math.min(max, el.scrollLeft + e.deltaY))
   if (next === el.scrollLeft) return
   e.preventDefault()
-  el.scrollLeft = next
+  el.scrollLeft = next // 逐格操作，即时（平滑动画留给点击/定位）
   updateScrollable()
 }
 
@@ -155,6 +194,7 @@ onUnmounted(() => {
   window.removeEventListener('resize', updateScrollable)
   settleTimers.forEach(clearTimeout)
   settleTimers = []
+  if (animRaf) cancelAnimationFrame(animRaf)
 })
 watch(
   () => props.groups.length,
@@ -233,6 +273,10 @@ function remove(g) {
      这里 overflow-x: hidden 仍然是一个可编程滚动的滚动容器，scrollLeft 照常可写，
      滚动全部交给下面 onWheel / ensureVisible 精确控制。 */
   overflow-x: hidden;
+  /* 右侧留出渐隐的宽度：不留的话最后一个胶囊永远贴着右边缘、压在渐隐里，
+     看起来像"只漏出来一点点"（滚到最右也没用，因为内容右边没有余量）。
+     左侧不用留 —— 没滚动时本来就没有左侧渐隐。 */
+  padding-right: 34px;
   padding-bottom: 2px;
   scrollbar-width: none;
 }
