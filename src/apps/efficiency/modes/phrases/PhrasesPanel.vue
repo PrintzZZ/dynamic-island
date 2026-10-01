@@ -56,9 +56,8 @@
                 <Icon name="check" class="copied-ico" />已复制
               </span>
             </Transition>
-            <button class="del" title="删除" @click.stop="remove(p.id)">
-              <Icon name="close" class="del-ico" />
-            </button>
+            <!-- 刻意不放删除按钮：常用语是"点一下就复制"的高频操作，
+                 旁边挂个删除太容易误触。要删请到设置 →「常用」里删。 -->
           </div>
         </TransitionGroup>
       </div>
@@ -138,7 +137,6 @@ import {
   installPasteHandler,
   phrases,
   pickImages,
-  removePhrase,
   sortCollect,
   thumbUrl,
   useImage,
@@ -238,10 +236,6 @@ async function copyImage(m) {
   if (!ok) return
   sfx.tick()
   flash(m.id, '已复制图片，可直接粘贴')
-}
-
-async function remove(id) {
-  await removePhrase(id)
 }
 
 async function pick() {
@@ -373,26 +367,29 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 4px;
 }
+/* 样式对齐剪贴板：条目本身有淡淡底色、hover 明显一点，
+   「已复制」统一用剪贴板那个蓝 —— 用户一眼就知道"已经进剪贴板了" */
 .phrase-item {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 9px 10px;
   border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
   transition: background 0.18s ease;
 }
 .phrase-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.09);
 }
 .phrase-item.copied {
-  background: rgba(191, 90, 242, 0.16);
+  background: rgba(90, 200, 250, 0.16);
 }
 .text {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 12.5px;
+  line-height: 1.35;
   color: #f5f5f7;
   /* 两行截断：模板类长常用语也能认出是哪条 */
   display: -webkit-box;
@@ -404,7 +401,7 @@ onUnmounted(() => {
 .copied-tag {
   font-size: 11px;
   font-weight: 700;
-  color: #bf5af2;
+  color: #5ac8fa;
   white-space: nowrap;
   flex-shrink: 0;
   display: inline-flex;
@@ -416,33 +413,6 @@ onUnmounted(() => {
   height: 11px;
   stroke-width: 2.8;
 }
-.del {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.35);
-  cursor: pointer;
-  opacity: 0;
-  transition: all 0.18s ease;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.del-ico {
-  width: 10px;
-  height: 10px;
-}
-.phrase-item:hover .del {
-  opacity: 1;
-}
-.del:hover {
-  background: var(--red);
-  color: #fff;
-}
-
 .empty {
   flex: 1;
   display: flex;

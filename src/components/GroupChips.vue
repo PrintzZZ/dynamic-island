@@ -301,11 +301,17 @@ function remove(g) {
   display: flex;
   align-items: center;
   gap: 6px;
-  /* 刻意用 hidden 而不是 auto：auto 时浏览器会把竖向滚轮也判成"横向滚动这条"，
-     于是指针一掠过分组栏，面板列表就滚不动了（用户反馈的冲突）。
-     这里 overflow-x: hidden 仍然是一个可编程滚动的滚动容器，scrollLeft 照常可写，
-     滚动全部交给下面 onWheel / ensureVisible 精确控制。 */
+  /* 两个轴都必须写 hidden —— 这里踩过一次很隐蔽的坑：
+     · overflow-x: auto 时，浏览器会把竖向滚轮判成"横向滚动这条"，指针掠过分组栏
+       就会把面板的滚轮吃掉；
+     · 只写 overflow-x: hidden 也不行：**按规范另一轴的 visible 会被算成 auto**，
+       于是分组栏看起来成了"能上下滚的容器"（padding-bottom 那 2px 溢出就够了），
+       CardCarousel 的 scrollableAt() 会把滚轮整段让给它 —— 表现就是"在常用语里
+       滚轮既不能滚列表、也不能左右切应用"，而剪贴板没有分组栏所以正常。
+     hidden 下它仍是可编程滚动的容器，scrollLeft 照常可写，滚动全部交给
+     下面 onWheel / ensureVisible 精确控制。 */
   overflow-x: hidden;
+  overflow-y: hidden;
   /* 右侧留出渐隐的宽度：不留的话最后一个胶囊永远贴着右边缘、压在渐隐里，
      看起来像"只漏出来一点点"（滚到最右也没用，因为内容右边没有余量）。
      左侧不用留 —— 没滚动时本来就没有左侧渐隐。 */
