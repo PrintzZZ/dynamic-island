@@ -1,7 +1,13 @@
 <template>
   <div class="gc">
-    <div ref="scrollEl" class="gc-scroll" :class="{ 'is-scrollable': scrollable }">
-      <button class="gc-chip" :class="{ on: modelValue === '*' }" @click="pick('*')">
+    <div
+      ref="scrollEl"
+      class="gc-scroll"
+      :class="{ 'is-scrollable': scrollable, 'can-left': canLeft, 'can-right': canRight }"
+      @wheel="onWheel"
+      @scroll="updateScrollable"
+    >
+      <button class="gc-chip" :class="{ on: modelValue === '*' }" @click="pick('*', $event)">
         全部<em v-if="total">{{ total }}</em>
       </button>
 
@@ -10,7 +16,7 @@
         :key="g"
         class="gc-chip"
         :class="{ on: modelValue === g }"
-        @click="pick(g)"
+        @click="pick(g, $event)"
       >
         {{ g }}<em v-if="count(g)">{{ count(g) }}</em>
         <span v-if="manage && modelValue === g" class="gc-x" title="删除该分组" @click.stop="remove(g)">×</span>
@@ -20,7 +26,7 @@
         v-if="uncategorized"
         class="gc-chip muted"
         :class="{ on: modelValue === '' }"
-        @click="pick('')"
+        @click="pick('', $event)"
       >
         未分类<em>{{ uncategorized }}</em>
       </button>
@@ -69,28 +75,96 @@ const inputEl = ref(null)
 
 const isGroup = computed(() => !!props.modelValue && props.modelValue !== '*')
 
-// 分组多了会横向溢出：给右侧一个渐隐，暗示"还能往右滑"
+// ---------- 横向滚动 ----------
+// 分组一多就溢出，而这一行的滚动条是隐藏的、竖向滚轮默认也不会横向滚 ——
+// 不加处理的话第 7 个往后的分组根本够不到（用户反馈）。所以：
+//   1) 滚轮映射成横向滚动；
+//   2) 点哪个胶囊就把它滚进视野（"点第六个，整排往右挪一个"）；
+//   3) 打开时把当前选中的分组滚进视野 —— 选中是会被记住的，记到第 8 个也得能看见。
 const scrollEl = ref(null)
 const scrollable = ref(false)
+const canLeft = ref(false)
+const canRight = ref(false)
+
 function updateScrollable() {
   const el = scrollEl.value
-  if (el) scrollable.value = el.scrollWidth - el.clientWidth > 4
+  if (!el) return
+  const max = el.scrollWidth - el.clientWidth
+  scrollable.value = max > 4
+  canLeft.value = max > 4 && el.scrollLeft > 2
+  canRight.value = max > 4 && el.scrollLeft < max - 2
 }
+
+// 让某个胶囊完整露出来（留一点边距，不然贴着渐隐边缘不好看）
+function ensureVisible(chip) {
+  const el = scrollEl.value
+  if (!el || !chip) return
+  const box = el.getBoundingClientRect()
+  const r = chip.getBoundingClientRect()
+  const pad = 10
+  if (r.left < box.left + pad) el.scrollLeft -= box.left + pad - r.left
+  else if (r.right > box.right - pad) el.scrollLeft += r.right - (box.right - pad)
+  updateScrollable()
+}
+
+// 竖向滚轮 → 横向滚动（面板里没有可见滚动条，鼠标也没有横向滚轮）
+function onWheel(e) {
+  const el = scrollEl.value
+  if (!el) return
+  const max = el.scrollWidth - el.clientWidth
+  if (max <= 4) return
+  const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
+  const next = Math.max(0, Math.min(max, el.scrollLeft + d))
+  if (next === el.scrollLeft) return
+  e.preventDefault()
+  el.scrollLeft = next
+  updateScrollable()
+}
+
+function scrollActiveIntoView() {
+  const el = scrollEl.value
+  if (!el) return
+  const chip = el.querySelector('.gc-chip.on')
+  if (chip) ensureVisible(chip)
+}
+
+// 展开动画 / 字体加载 / 计数变化都会让布局尺寸继续变，一次测量往往不够 ——
+// 轻量重试几次（不常驻、不与用户滚动打架）
+let settleTimers = []
+function scrollActiveIntoViewSoon() {
+  settleTimers.forEach(clearTimeout)
+  settleTimers = [0, 90, 220, 460, 900].map((d) => setTimeout(scrollActiveIntoView, d))
+}
+
 onMounted(() => {
   updateScrollable()
   window.addEventListener('resize', updateScrollable)
+  // 等一帧再定位：首次渲染时胶囊尺寸还没算出来
+  nextTick(() => requestAnimationFrame(scrollActiveIntoViewSoon))
 })
-onUnmounted(() => window.removeEventListener('resize', updateScrollable))
+onUnmounted(() => {
+  window.removeEventListener('resize', updateScrollable)
+  settleTimers.forEach(clearTimeout)
+  settleTimers = []
+})
 watch(
   () => props.groups.length,
   () => nextTick(updateScrollable)
 )
+// 选中项变了（含"记忆的分组在打开时被恢复"）就把它滚进视野
+watch(
+  () => props.modelValue,
+  () => nextTick(scrollActiveIntoViewSoon)
+)
 const count = (g) => (props.counts && props.counts.get ? props.counts.get(g) || 0 : 0)
 const uncategorized = computed(() => count(''))
 
-function pick(v) {
+function pick(v, ev) {
   if (editing.value) cancel()
   emit('update:modelValue', v)
+  // 点了就滚进视野：分组多的时候，点第 6 个应该让整排往右挪一格
+  const chip = ev && ev.currentTarget
+  if (chip) nextTick(() => ensureVisible(chip))
 }
 
 function startNew() {
@@ -152,10 +226,18 @@ function remove(g) {
 .gc-scroll::-webkit-scrollbar {
   display: none;
 }
-/* 只有真的溢出时才渐隐右缘 */
-.gc-scroll.is-scrollable {
+/* 只有真的溢出、且那一侧还有内容时才渐隐那一侧 */
+.gc-scroll.can-right {
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+}
+.gc-scroll.can-left {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 22px), transparent);
+}
+.gc-scroll.can-left.can-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 22px, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 22px, #000 calc(100% - 22px), transparent);
 }
 .gc-chip {
   position: relative;
