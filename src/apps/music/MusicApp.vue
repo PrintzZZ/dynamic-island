@@ -33,8 +33,8 @@
 
           <div class="prog">
             <div class="times">
-              <span>{{ fmt(position) }}</span>
-              <em v-if="estimated" class="est">估算</em>
+              <!-- <span>{{ fmt(position) }}</span>
+              <em v-if="estimated" class="est">估算</em> -->
               <span>{{ fmt(duration) }}</span>
             </div>
             <div class="bar">
@@ -105,7 +105,7 @@
           </div>
 
           <!-- wave + 播放状态 -->
-          <div class="wavebar">
+          <!-- <div class="wavebar">
             <div class="wave" :class="{ on: playing && !still }" aria-hidden="true">
               <i v-for="(h, i) in WAVE" :key="i" :style="{ '--h': h, '--i': i }" />
             </div>
@@ -113,11 +113,13 @@
               <span class="badge-note" aria-hidden="true">♪</span>
               {{ playing ? '正在播放' : '已暂停' }}
             </span>
-          </div>
+          </div> -->
 
           <!-- 拿不到进度时必须说清"为什么"，并提示"能点歌词对轴" ——
-               估算时钟是从检测到这首歌开始走的，播到一半才打开时初始就是偏的。 -->
-          <div class="hint" v-if="hint">{{ hint }}</div>
+               估算时钟是从检测到这首歌开始走的，播到一半才打开时初始就是偏的。
+               说了很多次了不需要提示
+               -->
+          <!-- <div class="hint" v-if="hint">{{ hint }}</div> -->
         </section>
       </div>
 
@@ -212,9 +214,13 @@ function rowHeight() {
   return (el && el.offsetHeight) || ROW_FALLBACK
 }
 
+// 当前句不放在顶部：上面留两行给"已经唱过去的两句"，也就是当前句落在第 3 行。
+// 还没唱到第 3 句时（i < 2）没有那么多过去，就不留空白，贴着顶部走。
+const LEAD_ROWS = 2
+
 function syncOffset() {
   const i = activeIndex.value
-  offset.value = i <= 0 ? 0 : i * rowHeight()
+  offset.value = Math.max(0, i - LEAD_ROWS) * rowHeight()
 }
 
 onMounted(() => {
@@ -344,12 +350,12 @@ function alignTo(idx) {
   flex: 1;
   min-height: 0;
   display: flex;
-  gap: 13px;
+  gap: 20px;
 }
 
 /* ================= 左栏 ================= */
 .rail {
-  width: 106px;
+  width: 138px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -357,8 +363,8 @@ function alignTo(idx) {
 }
 
 .poster {
-  width: 106px;
-  height: 106px;
+  width: 100px;
+  height: 100px;
   flex-shrink: 0;
   border-radius: 11px;
   overflow: hidden;
@@ -384,7 +390,7 @@ function alignTo(idx) {
 
 .title {
   margin-top: 2px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: #f5f5f7;
   line-height: 1.25;
@@ -467,8 +473,8 @@ function alignTo(idx) {
 }
 
 .ctl {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: none;
   border-radius: 50%;
   background: transparent;
@@ -496,27 +502,22 @@ function alignTo(idx) {
 
 /* 主按钮：环形描边 + 玻璃质感 */
 .ctl.main {
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   color: #fff;
-  border: 1.5px solid rgba(255, 255, 255, 0.5);
-  background: radial-gradient(circle at 50% 34%, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06) 72%);
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.05), 0 6px 16px rgba(0, 0, 0, 0.38);
 }
 
-.ctl.main:hover {
-  background: radial-gradient(circle at 50% 34%, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1) 72%);
-  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.08), 0 6px 18px rgba(0, 0, 0, 0.42);
-}
+
+
 
 .ctl-ico {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
 }
 
 .ctl.main .ctl-ico {
-  width: 15px;
-  height: 15px;
+  width: 24px;
+  height: 24px;
 }
 
 .ctl-ico.flip {
@@ -525,7 +526,7 @@ function alignTo(idx) {
 
 /* ================= 右栏 ================= */
 .main {
-  flex: 1;
+  
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -575,7 +576,7 @@ function alignTo(idx) {
   font-weight: 500;
   color: rgba(255, 255, 255, 0.72);
   opacity: 0.42;
-  filter: blur(1.25px);
+  filter: blur(0.8px);
   transform: translateY(1px);
 }
 
