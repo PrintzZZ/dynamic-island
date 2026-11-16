@@ -15,7 +15,9 @@
       <!-- ---------- 背景：海报磨砂。整块面板的色调都来自封面 ---------- -->
       <div class="bd" aria-hidden="true">
         <Transition name="bd">
-          <img v-if="cover" :key="cover" class="bd-img" :src="cover" alt="" />
+          <!-- 按曲目换，不按封面字符串换：封面值偶尔会在两套来源之间抖动，
+               用 cover 当 key 会每抖一次就重新挂载、重新淡入（看起来像背景在闪）。 -->
+          <img v-if="cover" :key="trackKey" class="bd-img" :src="cover" alt="" />
         </Transition>
         <div class="bd-dim" />
       </div>
@@ -33,8 +35,9 @@
 
           <div class="prog">
             <div class="times">
-              <!-- <span>{{ fmt(position) }}</span>
+              <!-- 
               <em v-if="estimated" class="est">估算</em> -->
+              <span>{{ fmt(position) }}</span>
               <span>{{ fmt(duration) }}</span>
             </div>
             <div class="bar">
@@ -411,6 +414,7 @@ function alignTo(idx) {
 /* 进度：时间在上、细条在下 */
 .prog {
   margin-top: 3px;
+  padding-right: 10px;
 }
 
 .times {
@@ -597,7 +601,7 @@ function alignTo(idx) {
   filter: none;
   transform: none;
   letter-spacing: 0.2px;
-  text-shadow: 0 0 20px rgba(255, 255, 255, 0.3), 0 2px 10px rgba(0, 0, 0, 0.45);
+  /* text-shadow: 0 0 20px rgba(255, 255, 255, 0.3), 0 2px 10px rgba(0, 0, 0, 0.45); */
 }
 
 /* 呼吸感：光晕极缓地明暗一次，不抢戏 */
@@ -788,10 +792,10 @@ function alignTo(idx) {
 
 .source {
   position: absolute;
-  right: 12px;
+  right: 20px;
   bottom: 4px;
   font-size: 9px;
-  color: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.04);
   pointer-events: none;
 }
 </style>

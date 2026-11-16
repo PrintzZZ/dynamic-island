@@ -188,7 +188,9 @@ async function loadCoverFor(myGen, title, artist) {
     url = ''
   }
   if (myGen !== gen) return
-  if (url) {
+  // 只补空：播放器通过 SMTC 给的是真实专辑封面（data URI），优先级最高；
+  // 这里是 iTunes / 占位图兜底。无条件覆盖会让两个来源互相打架、封面来回跳。
+  if (url && !snap.cover) {
     snap.cover = url
     broadcast()
   }
@@ -199,7 +201,9 @@ function onMediaChanged() {
   const playing = !!(c && c.playing)
   const title = c ? String(c.title || '') : ''
   const artist = c ? String(c.artist || '') : ''
-  const key = c ? `${c.app}|${title}|${artist}|${Number(c.dur) || 0}` : ''
+  // 注意不要带时长：暂停时有的播放器会把 dur 报成 0，而"时长变化"会被当成换歌，
+  // 于是封面/歌词整条管线重跑一遍，封面在两套来源之间来回跳（实测的"头像来回变"）。
+  const key = c ? `${c.app}|${title}|${artist}` : ''
 
   if (key !== lastTrackKey) {
     lastTrackKey = key
@@ -223,7 +227,8 @@ function onMediaChanged() {
     broadcast()
     if (title) {
       loadLyricsFor(my, title, artist, snap.durationMs, c ? String(c.app || '') : '')
-      loadCoverFor(my, title, artist)
+      // 播放器已经给了真实封面就不再抓兜底图
+      if (!snap.cover) loadCoverFor(my, title, artist)
     }
     return
   }
