@@ -186,6 +186,10 @@ app.whenReady().then(async () => {
     app.setPath('userData', PROFILE)
     require(path.join(PROJ, 'dist-electron', 'main.js'))
 
+    // 音乐面板的截图要可控：拦掉 music:arm，主进程就不会拉起常驻的 SMTC helper，
+    // 也就不会把"我本机正在放什么"推到渲染进程、冲掉下面注入的演示数据。
+    require('electron').ipcMain.removeAllListeners('music:arm')
+
     // ---- 工具 ----
     const pillRect = async (win) => {
       const r = await win.webContents.executeJavaScript(
@@ -305,6 +309,73 @@ app.whenReady().then(async () => {
     if (notice) await shot(win, 'island-notice.png', { rect: await pillRect(win), settle: 300 })
     await moveTo(win, 5, 5)
     await sleep(600)
+
+    // ---------------- 音乐展开态（注入演示曲目，避免截图里出现本机真实播放内容）----------------
+    log('')
+    log('音乐（注入演示曲目）：')
+    win.webContents.send('island:switch-app', 'music')
+    await sleep(1800)
+
+    const musicCover = await win.webContents.executeJavaScript(`(() => {
+      const c = document.createElement('canvas')
+      c.width = 400; c.height = 400
+      const x = c.getContext('2d')
+      const g = x.createLinearGradient(0, 0, 400, 400)
+      g.addColorStop(0, '#4b5a2e'); g.addColorStop(0.45, '#8b7a3f'); g.addColorStop(1, '#241d12')
+      x.fillStyle = g; x.fillRect(0, 0, 400, 400)
+      for (let i = 0; i < 900; i++) {
+        const rx = Math.random() * 400, ry = Math.random() * 400
+        x.fillStyle = 'rgba(' + (60 + Math.random() * 90) + ',' + (80 + Math.random() * 80) + ',40,' + (0.05 + Math.random() * 0.12) + ')'
+        x.beginPath(); x.arc(rx, ry, 1 + Math.random() * 7, 0, Math.PI * 2); x.fill()
+      }
+      x.fillStyle = 'rgba(255,255,255,0.92)'
+      x.font = 'bold 46px serif'
+      x.fillText('七里香', 42, 300)
+      x.font = 'italic 30px serif'
+      x.fillText('Jay', 44, 344)
+      return c.toDataURL('image/png')
+    })()`)
+
+    const DEMO_LYRICS = [
+      '窗外的麻雀 在电线杆上多嘴',
+      '你说这一句 很有夏天的感觉',
+      '手中的铅笔 在纸上来来回回',
+      '我用几行字 形容你是我的谁',
+      '秋刀鱼的滋味 猫跟你都想了解',
+      '初恋的香味 就这样被我们寻回',
+      '那温暖的阳光 像刚摘的鲜艳草莓',
+      '你说你舍不得吃掉这一种感觉',
+      '雨下整夜 我的爱溢出就像雨水',
+      '院子落叶 跟我的思念厚厚一叠',
+      '几句是非 也无法将我的热情冷却',
+      '你出现在我诗的每一页',
+    ]
+    win.webContents.send('music:changed', {
+      mediaId: 'demo-track',
+      title: '七里香',
+      artist: '周杰伦',
+      cover: musicCover,
+      durationMs: 4 * 60 * 1000,
+      positionMs: 5 * 8000 + 3600,
+      positionAt: Date.now(),
+      playing: true,
+      canPlay: true,
+      canPause: true,
+      canNext: true,
+      canPrev: true,
+      armed: true,
+      loading: false,
+      estimated: true,
+      fallback: false,
+      lyricSource: '网易云歌词',
+      lyrics: DEMO_LYRICS.map((text, i) => ({ t: i * 8000, text })),
+    })
+    await sleep(1500)
+    await expand(win)
+    await sleep(600)
+    await shot(win, 'app-music.png', { rect: await pillRect(win) })
+    await moveTo(win, 5, 5)
+    await sleep(900)
 
     // ---- 设置窗口 ----
     log('')
