@@ -12,8 +12,7 @@
     </div>
 
     <template v-else>
-      <!-- ---------- 背景：封面磨砂。整块面板的色调都来自封面，
-           这是"沉浸式播放器"最省事也最有效的做法（参考图里那层暖绿就是专辑封面。 ---------- -->
+      <!-- ---------- 背景：海报磨砂。整块面板的色调都来自封面 ---------- -->
       <div class="bd" aria-hidden="true">
         <Transition name="bd">
           <img v-if="cover" :key="cover" class="bd-img" :src="cover" alt="" />
@@ -21,98 +20,105 @@
         <div class="bd-dim" />
       </div>
 
-      <!-- ---------- 顶栏：封面 + 歌名 / 歌手 + 播放状态 ---------- -->
-      <div class="head">
-        <div class="cover">
-          <img v-if="cover" :src="cover" alt="" />
-          <Icon v-else name="volume" class="cover-ico" />
-        </div>
-        <div class="meta">
+      <div class="cols">
+        <!-- ================= 左栏：海报 → 歌名 → 作者 → 进度 → 控制 ================= -->
+        <aside class="rail">
+          <div class="poster">
+            <img v-if="cover" :src="cover" alt="" />
+            <Icon v-else name="volume" class="poster-ico" />
+          </div>
+
           <div class="title" :title="track.title">{{ track.title }}</div>
           <div class="artist" :title="track.artist">{{ track.artist || '未知歌手' }}</div>
-        </div>
-        <span class="badge" :class="{ on: playing }">
-          <span class="badge-note" aria-hidden="true">♪</span>
-          {{ playing ? '正在播放' : '已暂停' }}
-        </span>
-      </div>
 
-      <!-- ---------- 歌词窗口 ----------
-           当前句：正常亮度、加粗放大、白色微光，保留 ktv 擦除（已唱部分逐字点亮）；
-           其它句：模糊 + 半透明，随着当前句切换平滑地"对焦 / 失焦"；
-           整块用 translate3d 上移，让当前句停在窗口顶部；
-           最底部有渐隐遮罩。 -->
-      <div class="lyric">
-        <div v-if="!hasLyrics" class="lyric-empty">
-          {{ loading ? '正在找歌词…' : '没有找到歌词' }}
-        </div>
-        <div
-          v-else
-          ref="lnTrackEl"
-          class="ln-track"
-          :class="{ anim: animate }"
-          :style="{ transform: `translate3d(0, ${-offset}px, 0)` }"
-        >
-          <div
-            v-for="(l, k) in lyrics"
-            :key="k"
-            class="ln"
-            :class="{
-              now: k === activeIndex,
-              future: k > activeIndex,
-              past: k < activeIndex,
-              clickable: estimated,
-            }"
-            :title="estimated ? '点击把进度对齐到这一句' : ''"
-            @click="alignTo(k)"
-          >
-            <span v-if="k === activeIndex" class="ln-now">
-              <span class="ln-base">{{ l.text }}</span>
-              <span
-                v-if="l.text"
-                :key="lineMotionKey"
-                class="ln-fill"
-                :class="{ 'is-still': still, 'is-playing': playing }"
-                :style="{ ...lineMotionStyle, ...(still ? lineStaticStyle : {}) }"
-                aria-hidden="true"
-              >{{ l.text }}</span>
+          <div class="prog">
+            <div class="times">
+              <span>{{ fmt(position) }}</span>
+              <em v-if="estimated" class="est">估算</em>
+              <span>{{ fmt(duration) }}</span>
+            </div>
+            <div class="bar">
+              <div class="bar-fill" :style="{ width: percent + '%' }">
+                <span class="bar-head" />
+              </div>
+            </div>
+          </div>
+
+          <div class="foot" v-if="canControl">
+            <button class="ctl" title="上一首" :disabled="!canPrev" @click="prev">
+              <Icon name="skip" class="ctl-ico flip" />
+            </button>
+            <button class="ctl main" :title="playing ? '暂停' : '播放'" @click="togglePlay">
+              <Icon :name="playing ? 'pause' : 'play'" class="ctl-ico" />
+            </button>
+            <button class="ctl" title="下一首" :disabled="!canNext" @click="next">
+              <Icon name="skip" class="ctl-ico" />
+            </button>
+          </div>
+        </aside>
+
+        <!-- ================= 右栏：歌词 + wave ================= -->
+        <section class="main">
+          <!-- 歌词窗口
+               当前句：正常亮度、加粗放大、白色微光，保留 ktv 擦除（已唱部分逐字点亮）；
+               其它句：模糊 + 半透明，随当前句切换平滑地"对焦 / 失焦"；
+               整块 translate3d 上移，让当前句停在窗口顶部；最底部渐隐。 -->
+          <div class="lyric">
+            <div v-if="!hasLyrics" class="lyric-empty">
+              {{ loading ? '正在找歌词…' : '没有找到歌词' }}
+            </div>
+            <div
+              v-else
+              ref="lnTrackEl"
+              class="ln-track"
+              :class="{ anim: animate }"
+              :style="{ transform: `translate3d(0, ${-offset}px, 0)` }"
+            >
+              <div
+                v-for="(l, k) in lyrics"
+                :key="k"
+                class="ln"
+                :class="{
+                  now: k === activeIndex,
+                  future: k > activeIndex,
+                  past: k < activeIndex,
+                  clickable: estimated,
+                }"
+                :style="k === activeIndex ? { fontSize: nowFontSize } : null"
+                :title="estimated ? '点击把进度对齐到这一句' : ''"
+                @click="alignTo(k)"
+              >
+                <span v-if="k === activeIndex" class="ln-now">
+                  <span class="ln-base">{{ l.text }}</span>
+                  <span
+                    v-if="l.text"
+                    :key="lineMotionKey"
+                    class="ln-fill"
+                    :class="{ 'is-still': still, 'is-playing': playing }"
+                    :style="{ ...lineMotionStyle, ...(still ? lineStaticStyle : {}) }"
+                    aria-hidden="true"
+                  >{{ l.text }}</span>
+                </span>
+                <span v-else class="ln-txt">{{ l.text }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- wave + 播放状态 -->
+          <div class="wavebar">
+            <div class="wave" :class="{ on: playing && !still }" aria-hidden="true">
+              <i v-for="(h, i) in WAVE" :key="i" :style="{ '--h': h, '--i': i }" />
+            </div>
+            <span class="badge" :class="{ on: playing }">
+              <span class="badge-note" aria-hidden="true">♪</span>
+              {{ playing ? '正在播放' : '已暂停' }}
             </span>
-            <span v-else class="ln-txt">{{ l.text }}</span>
           </div>
-        </div>
-      </div>
 
-      <!-- ---------- 进度（总长借自歌词匹配记录，位置仍是本地秒表 → 标注"估算"） ---------- -->
-      <div class="progress">
-        <span class="t">{{ fmt(position) }}</span>
-        <div class="bar">
-          <div class="bar-fill" :style="{ width: percent + '%' }">
-            <span class="bar-head" />
-          </div>
-        </div>
-        <span class="t">{{ fmt(duration) }}</span>
-        <em v-if="estimated" class="est">估算</em>
-        <span class="lp-wave" :class="{ on: playing && !still }" aria-hidden="true">
-          <i /><i /><i /><i /><i /><i /><i />
-        </span>
-      </div>
-
-      <!-- 拿不到进度时必须说清"为什么"，并提示"能点歌词对轴" ——
-           估算时钟是从检测到这首歌开始走的，播到一半才打开时初始就是偏的，
-           不提示就等于没法纠偏。 -->
-      <div class="hint" v-if="hint">{{ hint }}</div>
-
-      <!-- ---------- 控制（播放器没暴露控制能力时整行不显示） ---------- -->
-      <div class="foot" v-if="canControl">
-        <button class="ctl" title="上一首" :disabled="!canPrev" @click="prev">
-          <Icon name="skip" class="ctl-ico flip" />
-        </button>
-        <button class="ctl main" :title="playing ? '暂停' : '播放'" @click="togglePlay">
-          <Icon :name="playing ? 'pause' : 'play'" class="ctl-ico" />
-        </button>
-        <button class="ctl" title="下一首" :disabled="!canNext" @click="next">
-          <Icon name="skip" class="ctl-ico" />
-        </button>
+          <!-- 拿不到进度时必须说清"为什么"，并提示"能点歌词对轴" ——
+               估算时钟是从检测到这首歌开始走的，播到一半才打开时初始就是偏的。 -->
+          <div class="hint" v-if="hint">{{ hint }}</div>
+        </section>
       </div>
 
       <div class="source" v-if="lyricSource">{{ lyricSource }}</div>
@@ -164,9 +170,12 @@ const percent = computed(() => {
 
 const hint = computed(() => {
   if (!estimated.value) return ''
-  if (fallback.value) return '未接入媒体会话 · 点歌词行对齐进度'
-  return '播放器不上报进度 · 按本地计时估算 · 点歌词行对齐'
+  if (fallback.value) return '未接入媒体会话 · 点歌词行对齐'
+  return '进度为本地估算 · 点歌词行对齐'
 })
+
+// 右侧 wave 的柱高（固定的一组，看起来像频谱而不是随机噪声）
+const WAVE = [0.32, 0.58, 0.42, 0.78, 0.5, 0.96, 0.66, 0.38, 0.62, 0.88, 0.46, 0.72, 0.34, 0.56, 0.82, 0.44, 0.68, 0.52, 0.9, 0.4]
 
 /* ------------------------------------------------------------------
  * 歌词滚动
@@ -175,7 +184,18 @@ const hint = computed(() => {
  * 逐行测量、也不会有测量时序问题。唯一要读一次的就是行高本身
  * （字号由 CSS 决定，写死在 JS 里容易和样式表脱节）。
  * ------------------------------------------------------------------ */
-const ROW_FALLBACK = 26
+// 当前句是主角，不能被省略号截断：右栏只有 237px，长句就按字数缩一号。
+// 行高固定在 CSS 里（--ln-h），所以改字号不影响滚动算术。
+const nowFontSize = computed(() => {
+  const item = lyrics.value[activeIndex.value]
+  const n = item ? [...String(item.text || '')].length : 0
+  if (n <= 10) return '18px'
+  if (n <= 13) return '16px'
+  if (n <= 16) return '14.5px'
+  return '13.5px'
+})
+
+const ROW_FALLBACK = 25
 
 const lnTrackEl = ref(null)
 const offset = ref(0)
@@ -245,7 +265,7 @@ function alignTo(idx) {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 12px 16px;
+  padding: 12px 14px;
   overflow: hidden;
 }
 
@@ -276,7 +296,7 @@ function alignTo(idx) {
   color: rgba(255, 255, 255, 0.3);
 }
 
-/* ---------- 磨砂背景 ---------- */
+/* ---------- 海报磨砂背景 ---------- */
 .bd {
   position: absolute;
   inset: 0;
@@ -299,7 +319,6 @@ function alignTo(idx) {
   opacity: 0.62;
 }
 
-/* 压暗 + 上下收边：保证任何封面上文字都可读 */
 .bd-dim {
   position: absolute;
   inset: 0;
@@ -318,126 +337,214 @@ function alignTo(idx) {
   opacity: 0;
 }
 
-/* ---------- 顶栏 ---------- */
-.head {
+/* ---------- 两栏 ---------- */
+.cols {
   position: relative;
   z-index: 1;
+  flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 40px;
-  flex-shrink: 0;
+  gap: 13px;
 }
 
-.cover {
-  width: 40px;
-  height: 40px;
-  border-radius: 9px;
-  overflow: hidden;
+/* ================= 左栏 ================= */
+.rail {
+  width: 106px;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.poster {
+  width: 106px;
+  height: 106px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  overflow: hidden;
   background: rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.09);
 }
 
-.cover img {
+.poster img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
 
-.cover-ico {
-  width: 20px;
-  height: 20px;
+.poster-ico {
+  width: 28px;
+  height: 28px;
   color: rgba(255, 255, 255, 0.35);
 }
 
-.meta {
-  flex: 1;
-  min-width: 0;
-}
-
 .title {
-  font-size: 15px;
+  margin-top: 2px;
+  font-size: 13px;
   font-weight: 600;
   color: #f5f5f7;
-  letter-spacing: 0.2px;
+  line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .artist {
-  margin-top: 1px;
-  font-size: 11px;
+  font-size: 10.5px;
   color: rgba(255, 255, 255, 0.5);
+  line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.badge {
-  flex-shrink: 0;
-  display: inline-flex;
+/* 进度：时间在上、细条在下 */
+.prog {
+  margin-top: 3px;
+}
+
+.times {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  height: 22px;
-  padding: 0 9px 0 8px;
-  border-radius: 999px;
+  justify-content: space-between;
+  gap: 3px;
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.45);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.est {
+  font-style: normal;
+  font-size: 8.5px;
+  padding: 0 3px;
+  border-radius: 3px;
+  color: rgba(255, 255, 255, 0.42);
   background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 10.5px;
-  font-weight: 500;
-  backdrop-filter: blur(6px);
-  transition: color 0.3s ease, background 0.3s ease;
 }
 
-.badge.on {
-  color: rgba(255, 255, 255, 0.82);
+.bar {
+  position: relative;
+  margin-top: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
 }
 
-.badge-note {
-  font-size: 11px;
-  line-height: 1;
-  color: #30d158;
+.bar-fill {
+  position: relative;
+  height: 100%;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  transition: width 0.25s linear;
 }
 
-.badge.on .badge-note {
-  animation: notePulse 2.4s ease-in-out infinite;
+/* 进度头：小白点（只做指示，不能拖 —— 真实播放器进度不可写，估时模式拖动只会骗人） */
+.bar-head {
+  position: absolute;
+  right: -3px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.55);
 }
 
-@keyframes notePulse {
-  0%,
-  100% {
-    opacity: 0.55;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.18);
-  }
+/* 控制：贴到左栏底部 */
+.foot {
+  margin-top: auto;
+  padding-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
 
-/* ---------- 歌词窗口 ----------
-   行高固定，当前句停在第 0 行；其它行模糊半透明；底部渐隐。
+.ctl {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.ctl:hover:not(:disabled) {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.ctl:active:not(:disabled) {
+  transform: scale(0.93);
+}
+
+.ctl:disabled {
+  opacity: 0.26;
+  cursor: default;
+}
+
+/* 主按钮：环形描边 + 玻璃质感 */
+.ctl.main {
+  width: 34px;
+  height: 34px;
+  color: #fff;
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  background: radial-gradient(circle at 50% 34%, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06) 72%);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.05), 0 6px 16px rgba(0, 0, 0, 0.38);
+}
+
+.ctl.main:hover {
+  background: radial-gradient(circle at 50% 34%, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1) 72%);
+  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.08), 0 6px 18px rgba(0, 0, 0, 0.42);
+}
+
+.ctl-ico {
+  width: 16px;
+  height: 16px;
+}
+
+.ctl.main .ctl-ico {
+  width: 15px;
+  height: 15px;
+}
+
+.ctl-ico.flip {
+  transform: rotate(180deg);
+}
+
+/* ================= 右栏 ================= */
+.main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* 歌词窗口：行高固定，当前句停在第 0 行；其它行模糊半透明；底部渐隐。
    行高写进 --ln-h，JS 只读一次实际行高来算位移。 */
 .lyric {
-  position: relative;
-  z-index: 1;
   flex: 1;
   min-height: 0;
-  margin: 8px 0 6px;
   overflow: hidden;
-  /* 最底部渐隐：往下还有歌词，但让它在边缘化开（当前句永远在最上面，不会被吃掉） */
   -webkit-mask-image: linear-gradient(180deg, #000 0, #000 62%, rgba(0, 0, 0, 0.4) 86%, transparent 100%);
   mask-image: linear-gradient(180deg, #000 0, #000 62%, rgba(0, 0, 0, 0.4) 86%, transparent 100%);
 }
 
 .ln-track {
-  --ln-h: 26px;
+  --ln-h: 25px;
   position: relative;
   will-change: transform;
 }
@@ -464,32 +571,32 @@ function alignTo(idx) {
 
 /* 其他句：模糊 + 半透明。越远越淡一点，形成层次 */
 .ln.future {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.72);
   opacity: 0.42;
-  filter: blur(1.35px);
+  filter: blur(1.25px);
   transform: translateY(1px);
 }
 
 .ln.past {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.6);
   opacity: 0.28;
-  filter: blur(1.7px);
+  filter: blur(1.6px);
 }
 
 /* 当前句：清晰、加粗、放大、白色微光 */
 .ln.now {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   color: #fff;
   opacity: 1;
   filter: none;
   transform: none;
-  letter-spacing: 0.3px;
-  text-shadow: 0 0 22px rgba(255, 255, 255, 0.3), 0 2px 10px rgba(0, 0, 0, 0.45);
+  letter-spacing: 0.2px;
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.3), 0 2px 10px rgba(0, 0, 0, 0.45);
 }
 
 /* 呼吸感：光晕极缓地明暗一次，不抢戏 */
@@ -502,6 +609,7 @@ function alignTo(idx) {
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.94;
   }
@@ -522,8 +630,7 @@ function alignTo(idx) {
 
 .ln-base {
   display: block;
-  /* 未唱部分也给到 0.72：整句要看得清（"当前句正常显示"），
-     唱过的部分再提亮到纯白 */
+  /* 未唱部分也给到 0.72：整句要看得清，唱过的部分再提亮到纯白 */
   color: rgba(255, 255, 255, 0.72);
   white-space: nowrap;
   overflow: hidden;
@@ -571,238 +678,118 @@ function alignTo(idx) {
   padding-top: 6px;
 }
 
-/* ---------- 进度 ---------- */
-.progress {
-  position: relative;
-  z-index: 1;
+/* ---------- wave + 状态 ---------- */
+.wavebar {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 7px;
-  height: 14px;
+  gap: 8px;
+  height: 26px;
 }
 
-.t {
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.45);
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-.bar {
+.wave {
   flex: 1;
   min-width: 0;
-  height: 3px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  overflow: visible;
-}
-
-.bar-fill {
-  position: relative;
-  height: 100%;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  transition: width 0.25s linear;
-}
-
-/* 进度头：一个小白点，和参考图一致（只做指示，不能拖 —— 真正的播放器
-   进度不可写，估时模式下拖动只会骗人） */
-.bar-head {
-  position: absolute;
-  right: -3px;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  margin-top: -3px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.55);
-}
-
-/* "估算"角标：总长借自歌词记录、位置是本地秒表时，进度条只能算近似 */
-.est {
-  flex-shrink: 0;
-  font-style: normal;
-  font-size: 9.5px;
-  padding: 0 3px;
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.42);
-  background: rgba(255, 255, 255, 0.09);
-}
-
-/* 从小往上排的"波形"：仅示意在播放，不占太多宽度 */
-.lp-wave {
-  flex: 0 0 auto;
+  height: 24px;
   display: flex;
   align-items: center;
-  gap: 1.5px;
-  height: 12px;
-  opacity: 0.4;
+  gap: 2px;
+  opacity: 0.42;
   transition: opacity 0.3s ease;
 }
 
-.lp-wave i {
-  display: block;
-  width: 1.6px;
-  height: 10px;
-  border-radius: 999px;
+.wave i {
+  flex: 1;
+  min-width: 1px;
+  height: 100%;
+  border-radius: 1.5px;
   background: #fff;
   transform-origin: center;
-  transform: scaleY(0.3);
+  /* 静态时也要看得出"频谱"，太矮会像一串虚线 */
+  transform: scaleY(calc(var(--h) * 0.82));
 }
 
-.lp-wave.on {
-  opacity: 0.85;
+.wave.on {
+  opacity: 0.72;
 }
 
-.lp-wave.on i {
-  animation: music-wave 0.9s ease-in-out infinite;
+.wave.on i {
+  animation: waveBar 1.05s ease-in-out infinite;
+  animation-delay: calc(var(--i) * -0.083s);
 }
 
-.lp-wave.on i:nth-child(1) {
-  animation-duration: 0.72s;
-  animation-delay: -0.15s;
-}
-
-.lp-wave.on i:nth-child(2) {
-  animation-duration: 0.86s;
-  animation-delay: -0.38s;
-}
-
-.lp-wave.on i:nth-child(3) {
-  animation-duration: 0.68s;
-  animation-delay: -0.08s;
-}
-
-.lp-wave.on i:nth-child(4) {
-  animation-duration: 0.94s;
-  animation-delay: -0.52s;
-}
-
-.lp-wave.on i:nth-child(5) {
-  animation-duration: 0.76s;
-  animation-delay: -0.27s;
-}
-
-.lp-wave.on i:nth-child(6) {
-  animation-duration: 0.88s;
-  animation-delay: -0.64s;
-}
-
-.lp-wave.on i:nth-child(7) {
-  animation-duration: 0.7s;
-  animation-delay: -0.42s;
-}
-
-@keyframes music-wave {
+@keyframes waveBar {
   0%,
   100% {
-    transform: scaleY(0.3);
-  }
-
-  25% {
-    transform: scaleY(0.75);
+    transform: scaleY(calc(var(--h) * 0.42));
   }
 
   50% {
-    transform: scaleY(1);
+    transform: scaleY(var(--h));
+  }
+}
+
+.badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px 0 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 10px;
+  font-weight: 500;
+  backdrop-filter: blur(6px);
+  transition: color 0.3s ease;
+}
+
+.badge.on {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.badge-note {
+  font-size: 10px;
+  line-height: 1;
+  color: #30d158;
+}
+
+.badge.on .badge-note {
+  animation: notePulse 2.4s ease-in-out infinite;
+}
+
+@keyframes notePulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
   }
 
-  75% {
-    transform: scaleY(0.5);
+  50% {
+    opacity: 1;
+    transform: scale(1.18);
   }
 }
 
 /* ---------- 提示 ---------- */
 .hint {
-  position: relative;
-  z-index: 1;
   flex-shrink: 0;
-  margin-top: 3px;
-  height: 12px;
-  font-size: 10px;
+  height: 11px;
+  /* 右下角有歌词来源，别让提示压上去 */
+  padding-right: 52px;
+  font-size: 9.5px;
   color: rgba(255, 255, 255, 0.3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ---------- 控制 ---------- */
-.foot {
-  position: relative;
-  z-index: 1;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 26px;
-  height: 36px;
-  margin-top: 4px;
-}
-
-.ctl {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: color 0.16s ease, background 0.16s ease, transform 0.16s ease;
-}
-
-.ctl:hover:not(:disabled) {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.ctl:active:not(:disabled) {
-  transform: scale(0.94);
-}
-
-.ctl:disabled {
-  opacity: 0.26;
-  cursor: default;
-}
-
-/* 主按钮：环形描边 + 玻璃质感 —— 参考图里那颗"按下去会发光"的播放键 */
-.ctl.main {
-  width: 38px;
-  height: 38px;
-  color: #fff;
-  border: 1.5px solid rgba(255, 255, 255, 0.5);
-  background: radial-gradient(circle at 50% 34%, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06) 72%);
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.05), 0 8px 20px rgba(0, 0, 0, 0.38);
-}
-
-.ctl.main:hover {
-  background: radial-gradient(circle at 50% 34%, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1) 72%);
-  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.08), 0 8px 22px rgba(0, 0, 0, 0.42);
-}
-
-.ctl-ico {
-  width: 20px;
-  height: 20px;
-}
-
-.ctl.main .ctl-ico {
-  width: 18px;
-  height: 18px;
-}
-
-.ctl-ico.flip {
-  transform: rotate(180deg);
-}
-
 .source {
   position: absolute;
-  right: 14px;
-  bottom: 5px;
-  font-size: 9.5px;
+  right: 12px;
+  bottom: 4px;
+  font-size: 9px;
   color: rgba(255, 255, 255, 0.16);
   pointer-events: none;
 }

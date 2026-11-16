@@ -186,9 +186,6 @@ app.whenReady().then(async () => {
     app.setPath('userData', PROFILE)
     require(path.join(PROJ, 'dist-electron', 'main.js'))
 
-    // 音乐面板的截图要可控：拦掉 music:arm，主进程就不会拉起常驻的 SMTC helper，
-    // 也就不会把"我本机正在放什么"推到渲染进程、冲掉下面注入的演示数据。
-    require('electron').ipcMain.removeAllListeners('music:arm')
 
     // ---- 工具 ----
     const pillRect = async (win) => {
@@ -232,6 +229,11 @@ app.whenReady().then(async () => {
       fs.writeFileSync(path.join(OUT, name), img.toPNG())
       log(`  ${name}  ${img.getSize().width}x${img.getSize().height}`)
     }
+
+    // 音乐面板的截图要可控：等主进程的 music 初始化（在 whenReady 回调里注册监听）
+    // 跑完之后再摘掉 music:arm —— 摘早了没用，helper 照样会被拉起，
+    // 截到的就是"我本机正在放什么"而不是下面注入的演示曲目。
+    require('electron').ipcMain.removeAllListeners('music:arm')
 
     await sleep(4500)
     const win = BrowserWindow.getAllWindows()[0]
