@@ -285,9 +285,9 @@ export async function channelSeek(seconds) {
   if (channel.state !== 'connected' || !channel.songId) return false
   const r = await evaluate(seekExpr(channel.songId, seconds))
   if (r && r.ok) {
-    // 乐观更新：下一次轮询（≤500ms）会用播放器自己的值覆盖
-    channel.positionMs = Math.round(Number(seconds) * 1000)
-    channel.at = Date.now()
+    // 这里**不做**乐观更新：位置必须等播放器自己报回来。
+    // 一乐观，useMusic 的对位逻辑会立刻判成"已到位"，于是"落地偏早时补跳"永远没机会执行，
+    // 而界面又会因为预览值被提前清除而闪到真实位置（表现就是点了却停在上一句）。
     return true
   }
   return false

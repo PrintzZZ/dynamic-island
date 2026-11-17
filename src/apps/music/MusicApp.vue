@@ -440,9 +440,10 @@ function alignTo(idx) {
     // 量化过的（±几十到上百毫秒），于是 position 有时会 < 该句起点，高亮就掉进上一句。
     // 往句内偏 250ms（并留出到下一句的余量），保证落在这一句里面。
     const room = nextStart > start ? nextStart - start : 0
-    const bias = room > 0 ? Math.min(250, Math.max(0, room - 60)) : 250
+    const bias = room > 0 ? Math.min(300, Math.max(0, room - 60)) : 300
     beginSeek(start + bias)
-    commitSeek()
+    // 把句首传下去：落地如果还是偏到这一句之前，commitSeek 会往句内再推一次
+    commitSeek(start)
     return
   }
   if (!estimated.value) return
@@ -785,9 +786,12 @@ function alignTo(idx) {
 }
 
 /* 一行放不下就换行（不再用省略号截断）。行高定得大一点，让常规情况正好是
-   「2 行过去 + 当前句 + 3 行未来」= 6 行，不会一口气铺满整个窗口。 */
+   「2 行过去 + 当前句 + 3 行未来」= 6 行，不会一口气铺满整个窗口。 
+   min-height: 36px; 让歌词窗口最小高度是 3 行，避免换行后只剩一行的情况。
+   目前不需要
+   */
 .ln {
-  min-height: 36px;
+  
   padding: 3px 0;
   line-height: 1.45;
   white-space: normal;

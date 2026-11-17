@@ -500,22 +500,45 @@ export function cancelSeek() {
  * 对上了就交还真实位置；没对上（播放器不支持写进度，或估算模式）也交还 ——
  * 估算模式下主进程已经顺手把本地时钟对齐过去了。
  */
-export function commitSeek() {
-  const target = seekPreview.value
+export function commitSeek(guardStartMs = null) {
+  let target = seekPreview.value
   if (target == null) return
   seeking.value = true
+  let retried = false
   const api = typeof window !== 'undefined' && window.api
-  if (channel.state === 'connected') {
-    // 网易云：走它自己的 store，真正跳转
-    channelSeek(target / 1000)
-  } else if (api && api.musicSeek) {
-    api.musicSeek(Math.round(target))
+  const send = (ms) => {
+    if (channel.state === 'connected') {
+      // 网易云：走它自己的 store，真正跳转
+      channelSeek(ms / 1000)
+    } else if (api && api.musicSeek) {
+      api.musicSeek(Math.round(ms))
+    }
   }
-  const deadline = Date.now() + 1800
+  send(target)
+
+  // 点歌词时传了"这一句的起点"：播放器落地常常**偏早**，而且幅度不稳定
+  // （取整 / 关键帧 / buffer 边界），固定偏移赌不准。所以落地后校验一次：
+  // 位置已经到目标附近、却仍在句首之前，就往句内再推一次（**最多一次**）。
+  const guarded = Number.isFinite(guardStartMs)
+  const deadline = Date.now() + (guarded ? 3000 : 1800)
   if (seekTimer) clearInterval(seekTimer)
   seekTimer = setInterval(() => {
     const real = realPositionNow()
-    if (Math.abs(real - target) > 800 && Date.now() < deadline) return
+    if (
+      guarded &&
+      !retried &&
+      Math.abs(real - target) <= 1500 &&
+      real < guardStartMs - 20 &&
+      Date.now() < deadline
+    ) {
+      retried = true
+      target = guardStartMs + 900
+      seekPreview.value = target
+      send(target)
+      return
+    }
+    // 点歌词（guarded）时容差放宽：补跳后的二次落地常常还差近 1 秒
+    if (Math.abs(real - target) > (guarded ? 1200 : 800) && Date.now() < deadline) return
     clearInterval(seekTimer)
     seekTimer = null
     seekPreview.value = null
