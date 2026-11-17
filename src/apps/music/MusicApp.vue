@@ -79,7 +79,7 @@
                当前句：正常亮度、加粗放大、白色微光，保留 ktv 擦除（已唱部分逐字点亮）；
                其它句：模糊 + 半透明，随当前句切换平滑地"对焦 / 失焦"；
                整块 translate3d 上移，让当前句停在窗口顶部；最底部渐隐。 -->
-          <div class="lyric">
+          <div class="lyric" :class="{ browsing }" @wheel="onLyricWheel">
             <div v-if="!hasLyrics" class="lyric-empty">
               {{ loading ? '正在找歌词…' : '没有找到歌词' }}
             </div>
@@ -87,7 +87,7 @@
               v-else
               ref="lnTrackEl"
               class="ln-track"
-              :class="{ anim: animate }"
+              :class="{ anim: animate && !browsing }"
               :style="{ transform: `translate3d(0, ${-offset}px, 0)` }"
             >
               <div
@@ -241,9 +241,53 @@ function rowHeight() {
 // 还没唱到第 3 句时（i < 2）没有那么多过去，就不留空白，贴着顶部走。
 const LEAD_ROWS = 2
 
-function syncOffset() {
+// 手动浏览（滚轮）时的位移；null = 跟随播放
+const manualOffset = ref(null)
+let browseTimer = null
+const browsing = computed(() => manualOffset.value != null)
+
+const BROWSE_IDLE = 3000
+
+function autoOffset() {
   const i = activeIndex.value
-  offset.value = Math.max(0, i - LEAD_ROWS) * rowHeight()
+  return Math.max(0, i - LEAD_ROWS) * rowHeight()
+}
+
+function syncOffset() {
+  // 浏览中不要被自动跟随拽走；高亮仍由 activeIndex 管，所以当前句照样在走。
+  if (manualOffset.value != null) return
+  offset.value = autoOffset()
+}
+
+function maxOffset() {
+  const tr = lnTrackEl.value
+  if (!tr) return 0
+  return Math.max(0, tr.scrollHeight - rowHeight())
+}
+
+function onLyricWheel(ev) {
+  const tr = lnTrackEl.value
+  if (!tr) return
+  // 把滚轮从 CardCarousel 那里抢过来：这个区域滚轮=浏览歌词。
+  ev.preventDefault()
+  ev.stopPropagation()
+  const base = manualOffset.value != null ? manualOffset.value : offset.value
+  const next = Math.max(0, Math.min(maxOffset(), base + (Number(ev.deltaY) || 0)))
+  manualOffset.value = next
+  offset.value = next
+  if (browseTimer) clearTimeout(browseTimer)
+  browseTimer = setTimeout(backToCurrent, BROWSE_IDLE)
+}
+
+// 回到当前句：先解除"浏览"（让过渡恢复），下一帧再改位移，才能平滑滑回去
+function backToCurrent() {
+  if (browseTimer) {
+    clearTimeout(browseTimer)
+    browseTimer = null
+  }
+  if (manualOffset.value == null) return
+  manualOffset.value = null
+  requestAnimationFrame(() => syncOffset())
 }
 
 onMounted(() => {
@@ -264,6 +308,12 @@ const trackKey = computed(() => {
 })
 
 watch(trackKey, () => {
+  // 换歌了，浏览上下文没了，直接回到新的当前句
+  if (browseTimer) {
+    clearTimeout(browseTimer)
+    browseTimer = null
+  }
+  manualOffset.value = null
   animate.value = false
   syncOffset()
   requestAnimationFrame(() => (animate.value = true))
@@ -337,6 +387,10 @@ function onSeekCancel() {
 // 面板可能在拖动中被收起（岛塌缩会卸载面板）→ 别把预览值留在模块里
 onUnmounted(() => {
   if (dragging.value) cancelSeek()
+  if (browseTimer) {
+    clearTimeout(browseTimer)
+    browseTimer = null
+  }
 })
 
 function fmt(ms) {
@@ -681,6 +735,7 @@ function alignTo(idx) {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  cursor: default;
   -webkit-mask-image: linear-gradient(180deg, #000 0, #000 62%, rgba(0, 0, 0, 0.4) 86%, transparent 100%);
   mask-image: linear-gradient(180deg, #000 0, #000 62%, rgba(0, 0, 0, 0.4) 86%, transparent 100%);
 }
