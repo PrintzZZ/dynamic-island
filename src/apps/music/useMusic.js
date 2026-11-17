@@ -402,7 +402,28 @@ export const canControl =
 // 播放位置
 // --------------------------------------------------
 
-export function positionNow() {
+/*
+ * 拖动进度条时的本地预览。
+ *
+ * 为什么需要它：指令要经 helper 走一圈（≤300ms），播放器还可能根本不支持写进度。
+ * 拖动期间直接信播放器的位置，进度条会先跳回去再跳回来，歌词也会来回闪。
+ * 所以拖动期间用一个本地预览值顶替 position —— 进度条、时间、歌词索引、
+ * 逐字擦除全部跟着预览走；松手后再等播放器对位（对不上就超时交还真实位置）。
+ */
+const seekPreview = ref(null) // number | null
+const seeking = ref(false) // 已松手，正在等播放器对位
+let seekTimer = null
+
+export const canSeek = computed(() => !!(snap.value && snap.value.canSeek))
+
+function clampSeekMs(ms) {
+  const d = duration.value
+  const v = Math.max(0, Number(ms) || 0)
+  return d > 0 ? Math.min(v, Math.max(0, d - 200)) : v
+}
+
+// 真实播放位置（不含拖动预览）
+function realPositionNow() {
   const s = snap.value
 
   if (!s) return 0
@@ -424,6 +445,58 @@ export function positionNow() {
   return Math.max(0, p)
 }
 
+export function positionNow() {
+  return seekPreview.value != null ? seekPreview.value : realPositionNow()
+}
+
+export function beginSeek(ms) {
+  if (seekTimer) {
+    clearInterval(seekTimer)
+    seekTimer = null
+  }
+  seeking.value = false
+  seekPreview.value = clampSeekMs(ms)
+}
+
+export function moveSeek(ms) {
+  if (seekPreview.value == null) return
+  seekPreview.value = clampSeekMs(ms)
+}
+
+export function cancelSeek() {
+  if (seekTimer) {
+    clearInterval(seekTimer)
+    seekTimer = null
+  }
+  seekPreview.value = null
+  seeking.value = false
+}
+
+/**
+ * 松手：把目标交给主进程，然后等播放器自己报回的位置对上（±0.8s）或超时。
+ * 对上了就交还真实位置；没对上（播放器不支持写进度，或估算模式）也交还 ——
+ * 估算模式下主进程已经顺手把本地时钟对齐过去了。
+ */
+export function commitSeek() {
+  const target = seekPreview.value
+  if (target == null) return
+  seeking.value = true
+  const api = typeof window !== 'undefined' && window.api
+  if (api && api.musicSeek) api.musicSeek(Math.round(target))
+  const deadline = Date.now() + 1800
+  if (seekTimer) clearInterval(seekTimer)
+  seekTimer = setInterval(() => {
+    const real = realPositionNow()
+    if (Math.abs(real - target) > 800 && Date.now() < deadline) return
+    clearInterval(seekTimer)
+    seekTimer = null
+    seekPreview.value = null
+    seeking.value = false
+    // 重新对轴：让擦除动画从新位置重建，而不是接着旧时间轴
+    syncEpoch.value++
+    tick()
+  }, 60)
+}
 
 export const position =
   computed(() =>
@@ -1106,6 +1179,14 @@ export function useMusic() {
     // 播放位置
     position,
     duration,
+
+    // 拖动进度条
+    canSeek,
+    seeking,
+    beginSeek,
+    moveSeek,
+    cancelSeek,
+    commitSeek,
 
     // 歌词索引
     lineIndex,

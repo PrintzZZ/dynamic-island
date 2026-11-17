@@ -175,13 +175,25 @@ function Invoke-Command {
     }
     if ($null -eq $s) { $s = $mgr.GetCurrentSession() }
     if ($null -eq $s) { return }
-    switch ($cmd) {
-      'playpause' { $null = $s.TryTogglePlayPauseAsync() }
-      'play'      { $null = $s.TryPlayAsync() }
-      'pause'     { $null = $s.TryPauseAsync() }
-      'next'      { $null = $s.TrySkipNextAsync() }
-      'prev'      { $null = $s.TrySkipPreviousAsync() }
-      'stop'      { $null = $s.TryStopAsync() }
+    if ($cmd.StartsWith('seek:')) {
+      # 只有播放器声明进度可写时才下发；否则界面会假装成功
+      $ms = 0L
+      if ([long]::TryParse($cmd.Substring(5), [ref]$ms)) {
+        $canPos = $false
+        try { $canPos = [bool]$s.GetPlaybackInfo().Controls.IsPlaybackPositionEnabled } catch { }
+        if ($canPos -and $ms -ge 0 -and $ms -lt 86400000) {
+          $null = $s.TryChangePlaybackPositionAsync([TimeSpan]::FromMilliseconds([double]$ms))
+        }
+      }
+    } else {
+      switch ($cmd) {
+        'playpause' { $null = $s.TryTogglePlayPauseAsync() }
+        'play'      { $null = $s.TryPlayAsync() }
+        'pause'     { $null = $s.TryPauseAsync() }
+        'next'      { $null = $s.TrySkipNextAsync() }
+        'prev'      { $null = $s.TrySkipPreviousAsync() }
+        'stop'      { $null = $s.TryStopAsync() }
+      }
     }
     Start-Sleep -Milliseconds 120
   } catch { }

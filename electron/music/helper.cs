@@ -286,6 +286,19 @@ class SmtcHelper
             else if (cmd == "next") Await(s.TrySkipNextAsync());
             else if (cmd == "prev") Await(s.TrySkipPreviousAsync());
             else if (cmd == "stop") Await(s.TryStopAsync());
+            else if (cmd.StartsWith("seek:", StringComparison.Ordinal))
+            {
+                // 进度是"可写"才算数：播放器不提供 IsPlaybackPositionEnabled 时下发命令
+                // 只会让界面假装成功了。数值走整数毫秒，不经过区域设置的浮点解析。
+                long ms;
+                if (!long.TryParse(cmd.Substring(5), out ms)) return;
+                GlobalSystemMediaTransportControlsSessionPlaybackControls pc = null;
+                try { pc = s.GetPlaybackInfo().Controls; } catch { }
+                if (pc != null && pc.IsPlaybackPositionEnabled && ms >= 0 && ms < 86400000L)
+                {
+                    Await(s.TryChangePlaybackPositionAsync(TimeSpan.FromMilliseconds((double)ms)));
+                }
+            }
             Thread.Sleep(120);
         }
         catch { }

@@ -75,6 +75,9 @@ function baseSnapshot() {
     canPause: false,
     canNext: false,
     canPrev: false,
+    // 播放器是否允许写进度（GSMTC 的 IsPlaybackPositionEnabled）。
+    // 界面据此决定进度条能不能拖，以及拖动后是"真 seek"还是"本地对轴"。
+    canSeek: false,
     cover: '',
     lyrics: [],
     lyricSource: '',
@@ -106,6 +109,7 @@ function controls(c) {
     canPause: !!(c && c.canPause),
     canNext: !!(c && c.canNext),
     canPrev: !!(c && c.canPrev),
+    canSeek: !!(c && c.canPos),
   }
 }
 
@@ -325,6 +329,32 @@ export function registerMusicIpc() {
   // 按需启动：渲染进程在"岛展开到音乐面板"时调一次
   ipcMain.on('music:arm', () => {
     armMusic()
+  })
+
+  // 拖动进度条（渲染侧先做本地预览，这里只负责真正下发）。
+  // 能写就交给播放器；播放器没声明 IsPlaybackPositionEnabled 时退回"本地计时对轴"，
+  // 这样估算模式下拖动依然生效 —— 而不是界面假装成功、实际什么都没变。
+  ipcMain.on('music:seek', (_e, ms) => {
+    const target = Math.max(0, Math.min(86400000, Math.round(Number(ms) || 0)))
+    const c = media.current
+    if (snap.canSeek && sendMediaCommand('seek:' + target)) {
+      // 估算时钟也跟着移动：有真实时间轴的播放器用不到它，
+      // 但"有时间轴之外的情形、又能 seek"的播放器需要它。
+      est.base = target
+      est.startedAt = Date.now()
+      // 乐观锚定：helper 下一拍（≤300ms）会报回播放器的真实位置并覆盖这里。
+      snap.positionMs = target
+      snap.positionAt = Date.now()
+      broadcast()
+      return
+    }
+    if (snap.estimated) {
+      est.base = target
+      est.startedAt = Date.now()
+      snap.positionMs = positionFor(c)
+      snap.positionAt = Date.now()
+      broadcast()
+    }
   })
 
   // 手动对轴：把"现在"钉在某一句的起始时间上

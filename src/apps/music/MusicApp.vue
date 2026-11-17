@@ -40,10 +40,23 @@
               <span>{{ fmt(position) }}</span>
               <span>{{ fmt(duration) }}</span>
             </div>
-            <div class="bar">
+            <!-- 进度条：seekable 时才可拖（播放器不支持写进度且非估算模式时不可拖）。
+                 3px 的条不好抓，.bar-hit 把命中区上下各放宽 9px，视觉上保持细条。 -->
+            <div
+              class="bar"
+              :class="{ live: seekable, drag: dragging, seeking }"
+              :title="seekable ? '拖动调整进度' : ''"
+            >
               <div class="bar-fill" :style="{ width: percent + '%' }">
                 <span class="bar-head" />
               </div>
+              <span
+                class="bar-hit"
+                @pointerdown="onSeekDown"
+                @pointermove="onSeekMove"
+                @pointerup="onSeekUp"
+                @pointercancel="onSeekCancel"
+              />
             </div>
           </div>
 
@@ -132,7 +145,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Icon from '../../components/Icon.vue'
 import { motionScale } from '../../composables/useSettings'
 import { useMusic } from './useMusic'
@@ -154,6 +167,12 @@ const {
   position,
   duration,
   lineIndex,
+  canSeek,
+  seeking,
+  beginSeek,
+  moveSeek,
+  cancelSeek,
+  commitSeek,
   lineMotionStyle,
   lineMotionKey,
   lineStaticStyle,
@@ -247,6 +266,70 @@ watch(trackKey, () => {
   animate.value = false
   syncOffset()
   requestAnimationFrame(() => (animate.value = true))
+})
+
+/* ------------------------------------------------------------------
+ * 进度条拖动
+ *
+ * 拖动期间只改"本地预览"（useMusic 的 seekPreview）：进度条、时间、
+ * 歌词索引和逐字擦除全部跟着预览走，所以歌词在拖的时候就已经同步了。
+ * 松手才真正下发 seek，然后等播放器对位或超时。
+ * ------------------------------------------------------------------ */
+const dragging = ref(false)
+
+// 没有真实进度可写、又不是估算模式时，拖了也没用 —— 直接不给拖。
+const seekable = computed(() => (canSeek.value || estimated.value) && duration.value > 0)
+
+function ratioAt(barEl, ev) {
+  const r = barEl.getBoundingClientRect()
+  if (!r.width) return 0
+  return Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width))
+}
+
+function seekMsAt(barEl, ev) {
+  return ratioAt(barEl, ev) * duration.value
+}
+
+function onSeekDown(ev) {
+  if (!seekable.value) return
+  ev.preventDefault()
+  ev.stopPropagation()
+  dragging.value = true
+  const bar = ev.currentTarget.parentElement
+  try {
+    ev.currentTarget.setPointerCapture(ev.pointerId)
+  } catch {
+    /* 捕获失败也不影响：move/up 仍会在命中区里触发 */
+  }
+  beginSeek(seekMsAt(bar, ev))
+}
+
+function onSeekMove(ev) {
+  if (!dragging.value) return
+  moveSeek(seekMsAt(ev.currentTarget.parentElement, ev))
+}
+
+function onSeekUp(ev) {
+  if (!dragging.value) return
+  dragging.value = false
+  try {
+    ev.currentTarget.releasePointerCapture(ev.pointerId)
+  } catch {
+    /* ignore */
+  }
+  moveSeek(seekMsAt(ev.currentTarget.parentElement, ev))
+  commitSeek()
+}
+
+function onSeekCancel() {
+  if (!dragging.value) return
+  dragging.value = false
+  cancelSeek()
+}
+
+// 面板可能在拖动中被收起（岛塌缩会卸载面板）→ 别把预览值留在模块里
+onUnmounted(() => {
+  if (dragging.value) cancelSeek()
 })
 
 function fmt(ms) {
@@ -443,6 +526,38 @@ function alignTo(idx) {
   height: 3px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.16);
+}
+
+/* 命中区：细条两侧各放宽 9px（视觉不变，手感好很多） */
+.bar-hit {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -9px;
+  bottom: -9px;
+  touch-action: none;
+}
+
+.bar.live .bar-hit {
+  cursor: pointer;
+}
+
+.bar.live.drag .bar-hit {
+  cursor: grabbing;
+}
+
+.bar.live .bar-head {
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+}
+
+.bar.live.drag .bar-head {
+  transform: scale(1.9);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.85);
+}
+
+/* 已松手、正在等播放器对位 */
+.bar.seeking .bar-head {
+  opacity: 0.5;
 }
 
 .bar-fill {

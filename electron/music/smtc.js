@@ -391,7 +391,13 @@ export function setTargetPlayer(target) {
 // "暂停"会打到浏览器而不是界面上显示的那个播放器。
 export function sendMediaCommand(cmd) {
   if (!cmdPath) return false
-  if (!['playpause', 'play', 'pause', 'next', 'prev', 'stop'].includes(cmd)) return false
+  // 进度指令形如 seek:<整数毫秒>。在这里就把数值卡死，畸形值不往 helper 传。
+  const seek = /^seek:(\d{1,8})$/.exec(String(cmd || ''))
+  if (seek) {
+    if (Number(seek[1]) >= 86400000) return false
+  } else if (!['playpause', 'play', 'pause', 'next', 'prev', 'stop'].includes(cmd)) {
+    return false
+  }
   try {
     const app = appOf(media.current)
     fs.writeFileSync(cmdPath, app ? `${cmd}|${app}` : cmd, 'utf8')
