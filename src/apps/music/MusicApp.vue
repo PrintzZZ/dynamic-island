@@ -98,10 +98,10 @@
                   now: k === activeIndex,
                   future: k > activeIndex,
                   past: k < activeIndex,
-                  clickable: estimated,
+                  clickable: lineClickable,
                 }"
                 :style="k === activeIndex ? { fontSize: nowFontSize } : null"
-                :title="estimated ? '点击把进度对齐到这一句' : ''"
+                :title="lineClickable ? '点击跳转到这一句' : ''"
                 @click="alignTo(k)"
               >
                 <span v-if="k === activeIndex" class="ln-now">
@@ -149,6 +149,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Icon from '../../components/Icon.vue'
 import { motionScale } from '../../composables/useSettings'
 import { useMusic } from './useMusic'
+import { channel } from './useNeteaseChannel'
 
 const {
   track,
@@ -277,8 +278,14 @@ watch(trackKey, () => {
  * ------------------------------------------------------------------ */
 const dragging = ref(false)
 
+// 歌词行是否可点：估算模式（本地对轴）或静默通道已连上（真跳转）
+const lineClickable = computed(() => estimated.value || channel.state === 'connected')
+
 // 没有真实进度可写、又不是估算模式时，拖了也没用 —— 直接不给拖。
-const seekable = computed(() => (canSeek.value || estimated.value) && duration.value > 0)
+// 静默通道连上时也算"可写"（哪怕播放器不声明 IsPlaybackPositionEnabled）。
+const seekable = computed(
+  () => (canSeek.value || estimated.value || channel.state === 'connected') && duration.value > 0
+)
 
 function ratioAt(barEl, ev) {
   const r = barEl.getBoundingClientRect()
@@ -341,10 +348,18 @@ function fmt(ms) {
 
 // 点某一句 = 把本地计时对齐到它的起始时间。这是"估算同步"唯一的纠偏手段。
 function alignTo(idx) {
-  if (!estimated.value) return
   const list = lyrics.value
   if (idx < 0 || idx >= list.length) return
-  realignTo(list[idx].t)
+  const t = list[idx].t
+  // 通道连上时"点歌词"等于真的跳转：走和拖动同一套预览 + 对位逻辑。
+  // 只调 realignTo 是不够的 —— 真实位置现在以通道为准，本地时钟改了也会被盖掉。
+  if (channel.state === 'connected') {
+    beginSeek(t)
+    commitSeek()
+    return
+  }
+  if (!estimated.value) return
+  realignTo(t)
 }
 </script>
 

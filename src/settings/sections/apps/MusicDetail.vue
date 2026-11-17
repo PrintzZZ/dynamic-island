@@ -101,7 +101,6 @@ import Toggle from '../../components/Toggle.vue'
 import Select from '../../components/Select.vue'
 import Check from '../../components/Check.vue'
 import { settings, update } from '../../../composables/useSettings'
-import { channel } from '../../../apps/music/useNeteaseChannel'
 
 const s = settings
 const set = (patch) => update(patch)
@@ -129,19 +128,22 @@ onMounted(async () => {
   } catch {
     dir.value = ''
   }
+  if (s.musicNeteaseChannel) await probe()
 })
 const busy = ref(false)
 const busyMsg = ref('')
+const probeState = ref('') // '' | 'ok' | 'bad'
+const probeMsg = ref('')
 
+// 注意：连接本身建立在**灵动岛那个渲染进程**里（useNeteaseChannel 是模块级状态），
+// 设置窗口是另一个 renderer，拿不到那份状态 —— 所以这里只探测端口通不通：
+// 端口通 = 岛上能连上。之前直接读 channel.state，于是这里永远显示"未连接"。
 const channelStatus = computed(() => {
   if (busy.value && busyMsg.value) return busyMsg.value
   if (!s.musicNeteaseChannel) return '未开启'
-  if (channel.state === 'connected') {
-    return `已连接（端口 ${channel.port}）` + (channel.positionMs != null ? ' · 正在读真实进度' : ' · 还没读到播放状态')
-  }
-  if (channel.state === 'connecting') return '连接中…'
-  if (channel.state === 'error') return channel.reason || '连接失败'
-  return '未连接'
+  if (probeState.value === 'ok') return `调试端口可用（${s.musicNeteasePort}）· 灵动岛会自动连接`
+  if (probeState.value === 'bad') return probeMsg.value || `调试端口 ${s.musicNeteasePort} 不可用`
+  return '未检测'
 })
 
 async function onToggleChannel(on) {
@@ -154,14 +156,14 @@ async function probe() {
   busyMsg.value = '检测中…'
   try {
     const r = await window.api.musicNeteaseProbe(s.musicNeteasePort)
-    busyMsg.value = r && r.ok ? '调试端口可用' : (r && r.reason) || '端口不可用'
+    probeState.value = r && r.ok ? 'ok' : 'bad'
+    probeMsg.value = (r && !r.ok && r.reason) || ''
   } catch {
-    busyMsg.value = '检测失败'
+    probeState.value = 'bad'
+    probeMsg.value = '检测失败'
   }
   busy.value = false
-  setTimeout(() => {
-    busyMsg.value = ''
-  }, 5000)
+  busyMsg.value = ''
 }
 
 async function restart() {
@@ -169,14 +171,19 @@ async function restart() {
   busyMsg.value = '正在重启网易云…（会中断当前播放）'
   try {
     const r = await window.api.musicNeteaseRelaunch(s.musicNeteasePort)
-    busyMsg.value = r && r.ok ? '已重启，通道可用' : (r && r.reason) || '重启失败'
+    probeState.value = r && r.ok ? 'ok' : 'bad'
+    probeMsg.value = (r && !r.ok && r.reason) || ''
+    busyMsg.value = r && r.ok ? '已重启，调试端口可用' : ''
   } catch {
     busyMsg.value = '重启失败'
   }
   busy.value = false
-  setTimeout(() => {
-    busyMsg.value = ''
-  }, 8000)
+  if (busyMsg.value) {
+    const msg = busyMsg.value
+    setTimeout(() => {
+      if (busyMsg.value === msg) busyMsg.value = ''
+    }, 8000)
+  }
 }
 
 async function openDir() {
