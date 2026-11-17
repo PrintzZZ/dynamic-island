@@ -426,12 +426,25 @@ function clampSeekMs(ms) {
 // 真实播放位置（不含拖动预览）
 function realPositionNow() {
   // 网易云静默通道优先：它的 SMTC 没有时间轴，只有通道能给出真实进度。
-  // 用歌名做一次弱校验，避免通道还停在上一条会话时把进度张冠李戴。
+  // 用歌名做一次**宽松**校验：避免通道还停在上一条会话时把进度张冠李戴，
+  // 但也不能太严 —— 两边的标题常带后缀/空格差异（"(Live)"、remix 标记等），
+  // 一旦判成"不同会话"就会静默退回估算，表现就是"歌词不同步"。
   const viaChannel = channelPositionMs()
   if (viaChannel != null) {
-    const chTitle = channel.title
-    const mine = (snap.value && snap.value.title) || ''
-    if (!chTitle || !mine || chTitle === mine) return viaChannel
+    const norm = (v) =>
+      String(v || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+    const chTitle = norm(channel.title)
+    const mine = norm(snap.value && snap.value.title)
+    const same =
+      !chTitle ||
+      !mine ||
+      chTitle === mine ||
+      chTitle.includes(mine) ||
+      mine.includes(chTitle)
+    if (same) return viaChannel
   }
 
   const s = snap.value
@@ -1111,11 +1124,9 @@ watch(
     ) {
       window.api.musicArm()
     }
-    if (!on) {
-      disconnectChannel()
-      return
-    }
-    if (settings.musicNeteaseChannel) connectChannel(settings.musicNeteasePort)
+    // 注意：这里**不能**在收起时断开静默通道 —— 紧凑态的歌词条正是收起时才显示的，
+    // 一断它就拿不到真实进度、只能退回本地估算（表现就是"紧凑态歌词不同步"）。
+    // 通道由下面"有歌 + 开关打开"的 watch 统一管理。
   },
   {
     immediate: true
@@ -1123,18 +1134,22 @@ watch(
 )
 
 
-// 静默通道开关 / 端口变化时立即重连（用户常常就在面板开着时打开开关）
+// 静默通道的生命周期：开关打开 + 有歌在放就连着，与面板是否展开无关
+// （紧凑态的歌词条也要用真实进度）。关掉开关或没歌了就断开。
 watch(
-  [() => settings.musicNeteaseChannel, () => settings.musicNeteasePort],
+  [
+    () => settings.musicNeteaseChannel,
+    () => settings.musicNeteasePort,
+    () => hasTrack.value,
+  ],
   () => {
-    const onMusicPanel =
-      island.mode === 'expanded' && island.activeAppId === 'music'
-    if (onMusicPanel && settings.musicNeteaseChannel) {
+    if (settings.musicNeteaseChannel && hasTrack.value) {
       connectChannel(settings.musicNeteasePort)
     } else {
       disconnectChannel()
     }
-  }
+  },
+  { immediate: true }
 )
 
 // --------------------------------------------------
