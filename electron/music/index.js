@@ -27,6 +27,7 @@ import {
   currentPositionMs,
 } from './smtc.js'
 import { findLyrics, findCover } from './sources.js'
+import { probeNetease, relaunchNetease } from './neteaseChannel.js'
 
 let islandWin = null
 let gen = 0 // 曲目变更代数：丢弃换歌之后才回来的旧请求结果
@@ -325,6 +326,11 @@ export function registerMusicIpc() {
   ipcMain.on('music:command', (_e, cmd) => {
     sendMediaCommand(String(cmd || ''))
   })
+
+  // 网易云静默通道：探测 / 按调试参数重启。
+  // 重启会退出用户正在用的播放器，所以只由设置页的按钮显式触发。
+  ipcMain.handle('music:netease-probe', (_e, port) => probeNetease(port))
+  ipcMain.handle('music:netease-relaunch', (_e, port) => relaunchNetease(port))
 
   // 按需启动：渲染进程在"岛展开到音乐面板"时调一次
   ipcMain.on('music:arm', () => {

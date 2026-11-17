@@ -11,6 +11,7 @@
 import { computed, ref, watch } from 'vue'
 import { island } from '../../composables/useIsland'
 import { settings } from '../../composables/useSettings'
+import { channel, channelPositionMs, channelSeek, connectChannel, disconnectChannel } from './useNeteaseChannel'
 
 const snap = ref(null)
 
@@ -424,6 +425,15 @@ function clampSeekMs(ms) {
 
 // 真实播放位置（不含拖动预览）
 function realPositionNow() {
+  // 网易云静默通道优先：它的 SMTC 没有时间轴，只有通道能给出真实进度。
+  // 用歌名做一次弱校验，避免通道还停在上一条会话时把进度张冠李戴。
+  const viaChannel = channelPositionMs()
+  if (viaChannel != null) {
+    const chTitle = channel.title
+    const mine = (snap.value && snap.value.title) || ''
+    if (!chTitle || !mine || chTitle === mine) return viaChannel
+  }
+
   const s = snap.value
 
   if (!s) return 0
@@ -482,7 +492,12 @@ export function commitSeek() {
   if (target == null) return
   seeking.value = true
   const api = typeof window !== 'undefined' && window.api
-  if (api && api.musicSeek) api.musicSeek(Math.round(target))
+  if (channel.state === 'connected') {
+    // 网易云：走它自己的 store，真正跳转
+    channelSeek(target / 1000)
+  } else if (api && api.musicSeek) {
+    api.musicSeek(Math.round(target))
+  }
   const deadline = Date.now() + 1800
   if (seekTimer) clearInterval(seekTimer)
   seekTimer = setInterval(() => {
@@ -1096,12 +1111,31 @@ watch(
     ) {
       window.api.musicArm()
     }
+    if (!on) {
+      disconnectChannel()
+      return
+    }
+    if (settings.musicNeteaseChannel) connectChannel(settings.musicNeteasePort)
   },
   {
     immediate: true
   }
 )
 
+
+// 静默通道开关 / 端口变化时立即重连（用户常常就在面板开着时打开开关）
+watch(
+  [() => settings.musicNeteaseChannel, () => settings.musicNeteasePort],
+  () => {
+    const onMusicPanel =
+      island.mode === 'expanded' && island.activeAppId === 'music'
+    if (onMusicPanel && settings.musicNeteaseChannel) {
+      connectChannel(settings.musicNeteasePort)
+    } else {
+      disconnectChannel()
+    }
+  }
+)
 
 // --------------------------------------------------
 // 歌词索引时钟

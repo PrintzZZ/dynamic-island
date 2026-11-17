@@ -111,6 +111,8 @@ contextBridge.exposeInMainWorld('api', {
   // 手动对轴：点某句歌词 = "从现在起按这句同步"
   musicRealign: (ms) => ipcRenderer.send('music:realign', ms),
   musicSeek: (ms) => ipcRenderer.send('music:seek', ms),
+  musicNeteaseProbe: (port) => ipcRenderer.invoke('music:netease-probe', port),
+  musicNeteaseRelaunch: (port) => ipcRenderer.invoke('music:netease-relaunch', port),
   // 按需启动：展开到音乐面板时才叫主进程拉起常驻的 SMTC helper
   musicArm: () => ipcRenderer.send('music:arm'),
   musicLyricsDir: () => ipcRenderer.invoke('music:lyrics-dir'),

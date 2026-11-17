@@ -58,25 +58,50 @@
     </Row>
   </Card>
 
+  <Card title="网易云静默通道" icon="volume">
+    <Row
+      label="读取真实进度 / 拖动生效"
+      desc="网易云不上报系统进度。开启后通过它自己的调试接口读取真实进度并真正 seek —— 需要以调试端口重启一次网易云"
+    >
+      <Toggle
+        :model-value="s.musicNeteaseChannel === true"
+        @update:model-value="onToggleChannel"
+      />
+    </Row>
+    <Row label="通道状态" stack>
+      <div class="nc-row">
+        <code>{{ channelStatus }}</code>
+        <button class="st-btn ghost" :disabled="busy" @click="probe">检测</button>
+        <button class="st-btn ghost" :disabled="busy" @click="restart">重启网易云</button>
+      </div>
+      <div class="st-card-foot" style="padding: 6px 0 0">
+        调试端口 {{ s.musicNeteasePort }}。重启会退出当前播放器，之后由本程序带调试参数拉起；
+        连不上时自动退回本地计时，不会假装有真实进度。
+      </div>
+    </Row>
+  </Card>
+
   <Card title="关于同步" icon="info">
     <Row label="为什么有时歌词对不齐" stack>
       <div class="st-card-foot" style="padding: 0">
         歌词跟着播放进度走。Chrome、Spotify 这类播放器会上报进度，可以精确同步；
-        <b>网易云音乐不上报进度</b>（系统接口里拿不到），只能按本地计时估算 ——
+        <b>网易云音乐不上报进度</b>（系统接口里拿不到），默认只能按本地计时估算 ——
         中途打开、拖动进度条都会让它偏掉。这时在展开面板里点某一句歌词，即可把进度对齐到那一句。
+        想让它也精确，就打开上面的「网易云静默通道」。
       </div>
     </Row>
   </Card>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import Card from '../../components/Card.vue'
 import Row from '../../components/Row.vue'
 import Toggle from '../../components/Toggle.vue'
 import Select from '../../components/Select.vue'
 import Check from '../../components/Check.vue'
 import { settings, update } from '../../../composables/useSettings'
+import { channel } from '../../../apps/music/useNeteaseChannel'
 
 const s = settings
 const set = (patch) => update(patch)
@@ -105,6 +130,55 @@ onMounted(async () => {
     dir.value = ''
   }
 })
+const busy = ref(false)
+const busyMsg = ref('')
+
+const channelStatus = computed(() => {
+  if (busy.value && busyMsg.value) return busyMsg.value
+  if (!s.musicNeteaseChannel) return '未开启'
+  if (channel.state === 'connected') {
+    return `已连接（端口 ${channel.port}）` + (channel.positionMs != null ? ' · 正在读真实进度' : ' · 还没读到播放状态')
+  }
+  if (channel.state === 'connecting') return '连接中…'
+  if (channel.state === 'error') return channel.reason || '连接失败'
+  return '未连接'
+})
+
+async function onToggleChannel(on) {
+  set({ musicNeteaseChannel: !!on })
+  if (on) await probe()
+}
+
+async function probe() {
+  busy.value = true
+  busyMsg.value = '检测中…'
+  try {
+    const r = await window.api.musicNeteaseProbe(s.musicNeteasePort)
+    busyMsg.value = r && r.ok ? '调试端口可用' : (r && r.reason) || '端口不可用'
+  } catch {
+    busyMsg.value = '检测失败'
+  }
+  busy.value = false
+  setTimeout(() => {
+    busyMsg.value = ''
+  }, 5000)
+}
+
+async function restart() {
+  busy.value = true
+  busyMsg.value = '正在重启网易云…（会中断当前播放）'
+  try {
+    const r = await window.api.musicNeteaseRelaunch(s.musicNeteasePort)
+    busyMsg.value = r && r.ok ? '已重启，通道可用' : (r && r.reason) || '重启失败'
+  } catch {
+    busyMsg.value = '重启失败'
+  }
+  busy.value = false
+  setTimeout(() => {
+    busyMsg.value = ''
+  }, 8000)
+}
+
 async function openDir() {
   try {
     await window.api.musicOpenLyricsDir()
@@ -115,6 +189,25 @@ async function openDir() {
 </script>
 
 <style scoped>
+.nc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.nc-row code {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--st-text-3);
+  background: var(--st-card);
+  border: 1px solid var(--st-line);
+  border-radius: 8px;
+  padding: 6px 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .st-lyric-dir {
   display: flex;
   align-items: center;

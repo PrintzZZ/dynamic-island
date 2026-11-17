@@ -72,6 +72,9 @@ export const DEFAULTS = {
   musicLyricNetease: true,
   musicLyricQQ: true,
   musicArmed: false,
+  // 网易云静默通道（CDP）：读真实进度 + 真正 seek，需要网易云以调试端口启动
+  musicNeteaseChannel: false,
+  musicNeteasePort: 9223,
   // 「常用」页上次选中的分组（'*' 全部 / '' 未分类 / 组名）
   phraseGroup: '*',
   // 材料箱

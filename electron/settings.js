@@ -116,6 +116,10 @@ export const DEFAULTS = {
   // 用户第一次展开到音乐面板时置 true，之后每次启动直接恢复。
   // 属于「使用记录」而不是偏好，恢复默认设置时不重置（见 reset 的 keep）。
   musicArmed: false,
+  // 网易云静默通道（CDP）：它的 SMTC 会话不上报时间轴、也不允许写进度，
+  // 只有走它自己的页面（需要调试端口）才能读到真实进度并真正 seek。
+  musicNeteaseChannel: false,
+  musicNeteasePort: 9223,
 
   // 「常用」页上次选中的分组（'*' = 全部，'' = 未分类，其余是分组名）。
   // 同属「使用记录」：不改偏好就不该点亮「恢复默认设置」，恢复默认时也保留 ——
@@ -208,6 +212,11 @@ function sanitize(raw) {
   s.musicLyricNetease = bool(s.musicLyricNetease, DEFAULTS.musicLyricNetease)
   s.musicLyricQQ = bool(s.musicLyricQQ, DEFAULTS.musicLyricQQ)
   s.musicArmed = bool(s.musicArmed, DEFAULTS.musicArmed)
+  s.musicNeteaseChannel = bool(s.musicNeteaseChannel, DEFAULTS.musicNeteaseChannel)
+  s.musicNeteasePort =
+    Number.isInteger(Number(s.musicNeteasePort)) && Number(s.musicNeteasePort) >= 1024 && Number(s.musicNeteasePort) <= 65535
+      ? Number(s.musicNeteasePort)
+      : DEFAULTS.musicNeteasePort
   s.phraseGroup =
     typeof s.phraseGroup === 'string' && s.phraseGroup.length <= 24 ? s.phraseGroup : DEFAULTS.phraseGroup
   // 材料箱
