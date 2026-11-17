@@ -211,13 +211,14 @@ const WAVE = [0.32, 0.58, 0.42, 0.78, 0.5, 0.96, 0.66, 0.38, 0.62, 0.88, 0.46, 0
  * ------------------------------------------------------------------ */
 // 当前句是主角，不能被省略号截断：右栏只有 237px，长句就按字数缩一号。
 // 行高固定在 CSS 里（--ln-h），所以改字号不影响滚动算术。
+// 当前句放大一号；行现在允许换行，所以长句不必压得太小（换行也不会被截断）。
 const nowFontSize = computed(() => {
   const item = lyrics.value[activeIndex.value]
   const n = item ? [...String(item.text || '')].length : 0
-  if (n <= 10) return '18px'
-  if (n <= 13) return '16px'
-  if (n <= 16) return '14.5px'
-  return '13.5px'
+  if (n <= 10) return '21px'
+  if (n <= 14) return '19.5px'
+  if (n <= 18) return '17.5px'
+  return '16px'
 })
 
 const ROW_FALLBACK = 25
@@ -237,6 +238,7 @@ function rowHeight() {
   return (el && el.offsetHeight) || ROW_FALLBACK
 }
 
+
 // 当前句不放在顶部：上面留两行给"已经唱过去的两句"，也就是当前句落在第 3 行。
 // 还没唱到第 3 句时（i < 2）没有那么多过去，就不留空白，贴着顶部走。
 const LEAD_ROWS = 2
@@ -248,9 +250,15 @@ const browsing = computed(() => manualOffset.value != null)
 
 const BROWSE_IDLE = 3000
 
+// 行会换行，所以行高不再固定：位移必须按真实布局量。
+// 目标 = 让"当前句往上第 LEAD_ROWS 行"贴在窗口顶部（也就是当前句停在第 3 行）。
 function autoOffset() {
+  const tr = lnTrackEl.value
+  const rows = tr ? tr.children : null
+  if (!rows || !rows.length) return 0
   const i = activeIndex.value
-  return Math.max(0, i - LEAD_ROWS) * rowHeight()
+  const anchor = rows[Math.max(0, Math.min(rows.length - 1, i - LEAD_ROWS))]
+  return anchor ? anchor.offsetTop : 0
 }
 
 function syncOffset() {
@@ -261,8 +269,9 @@ function syncOffset() {
 
 function maxOffset() {
   const tr = lnTrackEl.value
-  if (!tr) return 0
-  return Math.max(0, tr.scrollHeight - rowHeight())
+  const win = tr ? tr.parentElement : null
+  if (!tr || !win) return 0
+  return Math.max(0, tr.scrollHeight - win.clientHeight)
 }
 
 function onLyricWheel(ev) {
@@ -290,10 +299,23 @@ function backToCurrent() {
   requestAnimationFrame(() => syncOffset())
 }
 
+let trackRo = null
+
 onMounted(() => {
   syncOffset()
-  // 首帧不要动画：从 0 滑到当前位置会像"面板自己滚了一下"
-  requestAnimationFrame(() => requestAnimationFrame(() => (animate.value = true)))
+  // 行会换行，定位依赖真实布局：首帧量到的 offsetTop 往往还是 0，
+  // 所以下一帧再量一次，量准了才开启动画。
+  requestAnimationFrame(() => {
+    syncOffset()
+    requestAnimationFrame(() => (animate.value = true))
+  })
+  // 宽度变化 / 字号变化都会改变换行与行高 → 重新定位（浏览中不打扰）
+  if (typeof ResizeObserver !== 'undefined' && lnTrackEl.value) {
+    trackRo = new ResizeObserver(() => {
+      if (manualOffset.value == null) syncOffset()
+    })
+    trackRo.observe(lnTrackEl.value)
+  }
 })
 
 watch([activeIndex, () => lyrics.value.length], syncOffset, { flush: 'post' })
@@ -390,6 +412,10 @@ onUnmounted(() => {
   if (browseTimer) {
     clearTimeout(browseTimer)
     browseTimer = null
+  }
+  if (trackRo) {
+    trackRo.disconnect()
+    trackRo = null
   }
 })
 
@@ -741,7 +767,6 @@ function alignTo(idx) {
 }
 
 .ln-track {
-  --ln-h: 25px;
   position: relative;
   will-change: transform;
   /* 滚轮浏览的默认手感：短促平滑。滚轮是连续小步，过渡太长会拖泥带水，
@@ -759,12 +784,14 @@ function alignTo(idx) {
   transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* 一行放不下就换行（不再用省略号截断）。行高定得大一点，让常规情况正好是
+   「2 行过去 + 当前句 + 3 行未来」= 6 行，不会一口气铺满整个窗口。 */
 .ln {
-  height: var(--ln-h);
-  line-height: var(--ln-h);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-height: 36px;
+  padding: 3px 0;
+  line-height: 1.45;
+  white-space: normal;
+  word-break: break-word;
   transition:
     font-size 0.42s cubic-bezier(0.22, 1, 0.36, 1),
     color 0.42s ease,
@@ -837,9 +864,8 @@ function alignTo(idx) {
   display: block;
   /* 未唱部分也给到 0.72：整句要看得清，唱过的部分再提亮到纯白 */
   color: rgba(255, 255, 255, 0.72);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .ln-fill {
@@ -847,11 +873,10 @@ function alignTo(idx) {
   inset: 0;
   display: block;
   color: #fff;
-  white-space: nowrap;
   pointer-events: none;
-  /* 两层文字必须用同样的截断方式，否则长句被省略号截断时高亮层会露出半个字 */
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* 两层必须用完全一致的换行规则，否则高亮层会和底层的字错位 */
+  white-space: normal;
+  word-break: break-word;
   clip-path: inset(0 100% 0 0);
   animation: lyric-wipe var(--lyric-duration) linear var(--lyric-delay) both;
   animation-play-state: paused;
