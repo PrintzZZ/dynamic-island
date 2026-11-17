@@ -182,7 +182,13 @@ function Invoke-Command {
         $canPos = $false
         try { $canPos = [bool]$s.GetPlaybackInfo().Controls.IsPlaybackPositionEnabled } catch { }
         if ($canPos -and $ms -ge 0 -and $ms -lt 86400000) {
-          $null = $s.TryChangePlaybackPositionAsync([TimeSpan]::FromMilliseconds([double]$ms))
+          # WinRT 的 TimeSpan 参数在不同投影下可能是 TimeSpan、也可能是 long（100ns 刻度）。
+          # C# 那份实测是 long，这里两种都试一次，免得兜底路径静默失效。
+          try {
+            $null = $s.TryChangePlaybackPositionAsync([TimeSpan]::FromMilliseconds([double]$ms))
+          } catch {
+            try { $null = $s.TryChangePlaybackPositionAsync([long]($ms * 10000)) } catch { }
+          }
         }
       }
     } else {

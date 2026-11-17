@@ -235,7 +235,12 @@ function prepareHelperExe() {
       const args = ['/nologo', '/target:exe', `/out:${exePath}`, ...refs.map((r) => `/r:${r}`), csPath]
       const cc = spawn(csc, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
       let errOut = ''
-      cc.stdout.on('data', () => {})
+      // csc 把编译错误写在 **stdout**（不是 stderr）。之前这里直接丢弃，失败时只能看到
+      // "exit 1"，完全无法诊断。两个流都收，日志里才有真正的错误码。
+      cc.stdout.setEncoding('utf8')
+      cc.stdout.on('data', (d) => {
+        errOut += d
+      })
       cc.stderr.setEncoding('utf8')
       cc.stderr.on('data', (d) => {
         errOut += d

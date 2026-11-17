@@ -296,7 +296,10 @@ class SmtcHelper
                 try { pc = s.GetPlaybackInfo().Controls; } catch { }
                 if (pc != null && pc.IsPlaybackPositionEnabled && ms >= 0 && ms < 86400000L)
                 {
-                    Await(s.TryChangePlaybackPositionAsync(TimeSpan.FromMilliseconds((double)ms)));
+                    // 这套编译方式只用 winmd、不引 System.Runtime.WindowsRuntime，
+                    // 所以 WinRT 的 TimeSpan 参数投影成 long（100 纳秒刻度，不是 TimeSpan）——
+                    // 传 TimeSpan 会直接 CS1503 编译失败、整个 helper 退回 PowerShell 版。
+                    Await(s.TryChangePlaybackPositionAsync(ms * 10000L));
                 }
             }
             Thread.Sleep(120);
