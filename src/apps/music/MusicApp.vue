@@ -350,16 +350,23 @@ function fmt(ms) {
 function alignTo(idx) {
   const list = lyrics.value
   if (idx < 0 || idx >= list.length) return
-  const t = list[idx].t
+  const start = Number(list[idx].t) || 0
+  const nextStart = idx + 1 < list.length ? Number(list[idx + 1].t) || 0 : 0
+
   // 通道连上时"点歌词"等于真的跳转：走和拖动同一套预览 + 对位逻辑。
   // 只调 realignTo 是不够的 —— 真实位置现在以通道为准，本地时钟改了也会被盖掉。
   if (channel.state === 'connected') {
-    beginSeek(t)
+    // 不能正好打在句首：播放器落地会略早一点，而通道读回来的进度还是按滑块百分比
+    // 量化过的（±几十到上百毫秒），于是 position 有时会 < 该句起点，高亮就掉进上一句。
+    // 往句内偏 250ms（并留出到下一句的余量），保证落在这一句里面。
+    const room = nextStart > start ? nextStart - start : 0
+    const bias = room > 0 ? Math.min(250, Math.max(0, room - 60)) : 250
+    beginSeek(start + bias)
     commitSeek()
     return
   }
   if (!estimated.value) return
-  realignTo(t)
+  realignTo(start)
 }
 </script>
 
