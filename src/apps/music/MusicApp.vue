@@ -87,7 +87,7 @@
               v-else
               ref="lnTrackEl"
               class="ln-track"
-              :class="{ anim: animate && !browsing }"
+              :class="{ anim: animate && !browsing, 'no-anim': !animate }"
               :style="{ transform: `translate3d(0, ${-offset}px, 0)` }"
             >
               <div
@@ -744,9 +744,17 @@ function alignTo(idx) {
   --ln-h: 25px;
   position: relative;
   will-change: transform;
+  /* 滚轮浏览的默认手感：短促平滑。滚轮是连续小步，过渡太长会拖泥带水，
+     但完全没有过渡又会一格一格地"跳"。 */
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* 切换当前句时整块上移；首帧 / 换歌时不要动画 */
+/* 首帧 / 换歌 / 定位：直接到位，不要动画 */
+.ln-track.no-anim {
+  transition: none;
+}
+
+/* 跟随当前句、以及 3 秒后回到当前句：慢一点、更有"滑"的感觉 */
 .ln-track.anim {
   transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
 }
